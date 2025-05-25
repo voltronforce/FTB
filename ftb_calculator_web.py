@@ -131,7 +131,12 @@ with results_tab:
     st.pyplot(fig)
 
     st.subheader("🧮 Compare Scenarios")
-    compare_income = st.slider("Compare different household incomes", 0, 140000, [30000, 80000, 120000], step=10000)
+    compare_income = st.multiselect(
+    "Select household incomes to compare",
+    options=list(range(0, 140001, 10000)),
+    default=[30000, 80000, 120000]
+)
+
     compare_data = {
         f"${i:,}": {
             "FTB Part A": calc_ftb_part_a(i, len(child_ages)),
