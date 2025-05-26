@@ -1,80 +1,60 @@
 """Family Tax Benefit & Rent Assistance Calculator
-==================================================
+================================================
 
-Updated: 26 May 2025 (rates effective 20 Mar 2025)
+Updated: 26 May 2025 (rates effective 20 Mar 2025)
 
-Key changes
------------
-* All maximum/base rates and thresholds brought into line with the *Guide to Australian Government Payments – 20 March 2025*.
-* Immunisation / Health‑start compliance penalties now apply a **$34.44 per‑fortnight** reduction (indexed each 1 July).
-* Maintenance‑action test now reduces the rate to **Base Rate** rather than zero.
-* Rates & thresholds moved to a JSON‑like structure (`RATES_2025`) for easier annual indexation.
+This single‑file Streamlit app reflects the latest guidance and fixes the
+*"All numerical arguments must be of the same type"* error by ensuring that
+`value`, `min_value`, `max_value`, and `step` are **all of the same type** for
+_every_ numerical widget.
 
-Notes
------
-* Annual amounts below exclude end‑of‑year supplements unless explicitly noted.
-* Supplements (`ftb_a_supplement`, `ftb_b_supplement`) are added at the end of the financial year if eligible.
-* All monetary amounts are stored in *dollars* (AUD).
+——————————————————————————————————————————————————————————
+Run with →  `streamlit run ftb_streamlit_app_updated.py`
+——————————————————————————————————————————————————————————
 """
-
 from __future__ import annotations
-import json
 import math
 from dataclasses import dataclass
-from pathlib import Path
 from typing import List, Dict, Tuple
 
 import streamlit as st
 
 ###############################################################################
-# 2024‑25 RATES & THRESHOLDS
+# RATE TABLE ─ 2024‑25 (Guide to Australian Government Payments, 20 Mar 2025)
 ###############################################################################
 
 RATES_2025: Dict[str, object] = {
     "ftb_a": {
-        # Fortnightly core amounts (ex‑supplement)
-        "max_rate_pf": {
-            "0_12": 222.04,   # children aged 0‑12
-            "13_15": 288.82,  # children aged 13‑15
-            "16_19_secondary": 288.82,  # 16‑19 yo in secondary study
-        },
+        # Fortnightly core (ex‑supplement)
+        "max_rate_pf": {"0_12": 222.04, "13_15": 288.82, "16_19_secondary": 288.82},
         "base_rate_pf": 71.26,
-        # Supplements (paid after reconciliation)
         "supplement_annual": 916.15,
         # Income test
         "lower_threshold": 65_189,
         "higher_threshold": 115_997,
-        "primary_taper": 0.20,   # 20c per $ over lower threshold
-        "secondary_taper": 0.30, # 30c per $ over higher threshold
+        "primary_taper": 0.20,
+        "secondary_taper": 0.30,
     },
     "ftb_b": {
-        # Fortnightly core amounts (ex‑supplement)
-        "max_rate_pf": {
-            "<5": 188.86,
-            "5_18": 131.74,
-        },
+        "max_rate_pf": {"<5": 188.86, "5_18": 131.74},
         "supplement_annual": 448.95,
-        # Income test
         "secondary_earner_free_area": 6_789,
         "primary_earner_limit": 117_194,
-        "taper": 0.20,  # 20c per $ over free area for secondary earner
+        "taper": 0.20,
     },
-    "compliance_reduction_pf": 34.44,  # per unmet requirement per child
+    "compliance_reduction_pf": 34.44,  # flat reduction per unmet requirement
 }
 
 ###############################################################################
 # DATA CLASSES
 ###############################################################################
 
-from dataclasses import dataclass
-
 @dataclass
 class Child:
     age: int
     immunised: bool = True
     healthy_start: bool = True
-    maintenance_action_ok: bool = True  # Has parent taken reasonable maintenance action?
-
+    maintenance_action_ok: bool = True
 
 @dataclass
 class Family:
@@ -83,132 +63,169 @@ class Family:
     secondary_income: float = 0.0
     children: List[Child] = None
     receives_income_support: bool = False
-    rent_pf: float = 0.0  # Fortnightly rent
-    receives_rent_assistance: bool = False
-
+    rent_pf: float = 0.0
 
 ###############################################################################
-# HELPER FUNCTIONS
+# CALC HELPERS
 ###############################################################################
 
-def fortnightly_to_annual(amount_pf: float) -> float:
+def pf_to_annual(amount_pf: float) -> float:
     return round(amount_pf * 26, 2)
 
 
-def calc_ftb_a_child_rate_pf(child: Child, family_income: float, family: Family) -> Tuple[float, float]:
-    """Return (core_rate_pf_after_income_test, compliance_reduction_pf)."""
-    rates_a = RATES_2025["ftb_a"]
-
-    # Determine max or base core rate for age
-    if child.age <= 12:
-        core_pf = rates_a["max_rate_pf"]["0_12"]
-    elif child.age <= 15:
-        core_pf = rates_a["max_rate_pf"]["13_15"]
-    else:
-        core_pf = rates_a["max_rate_pf"]["16_19_secondary"]
-
-    # Apply income test unless family receives an income support payment
-    if not family.receives_income_support and family_income > rates_a["lower_threshold"]:
-        excess = family_income - rates_a["lower_threshold"]
-        if family_income <= rates_a["higher_threshold"]:
-            reduction = excess * rates_a["primary_taper"]
+def calc_ftb_a_child_pf(child: Child, family_income: float, kids: int, income_support: bool) -> float:
+    ra = RATES_2025["ftb_a"]
+    # base amount by age
+    core = (
+        ra["max_rate_pf"]["0_12"] if child.age <= 12 else ra["max_rate_pf"]["13_15"]
+        if child.age <= 15 else ra["max_rate_pf"]["16_19_secondary"]
+    )
+    # income test (unless on income support)
+    if not income_support and family_income > ra["lower_threshold"]:
+        excess = family_income - ra["lower_threshold"]
+        if family_income <= ra["higher_threshold"]:
+            red = excess * ra["primary_taper"]
         else:
-            red1 = (rates_a["higher_threshold"] - rates_a["lower_threshold"]) * rates_a["primary_taper"]
-            red2 = (family_income - rates_a["higher_threshold"]) * rates_a["secondary_taper"]
-            reduction = red1 + red2
-        core_pf = max(core_pf - (reduction / len(family.children)), 0)
-
-    # Compliance reductions (flat dollar) – applied *after* income test
-    compliance_pf = 0.0
+            red = (
+                (ra["higher_threshold"] - ra["lower_threshold"]) * ra["primary_taper"]
+                + (family_income - ra["higher_threshold"]) * ra["secondary_taper"]
+            )
+        core = max(core - red / kids, 0)
+    # compliance penalties
     if not child.immunised:
-        compliance_pf += RATES_2025["compliance_reduction_pf"]
-    if not child.healthy_start and 4 <= child.age <= 5:
-        compliance_pf += RATES_2025["compliance_reduction_pf"]
-
-    core_pf = max(core_pf - compliance_pf, 0)
-
-    # Maintenance action test: if failed, limit to base rate
+        core -= RATES_2025["compliance_reduction_pf"]
+    if 4 <= child.age <= 5 and not child.healthy_start:
+        core -= RATES_2025["compliance_reduction_pf"]
+    # maintenance action test
     if not child.maintenance_action_ok:
-        core_pf = min(core_pf, rates_a["base_rate_pf"])
-
-    return core_pf, compliance_pf
-
-
-def calc_ftb_part_a(family: Family) -> Dict[str, float]:
-    """Return a dict with fortnightly & annual totals incl. supplements."""
-    total_pf = 0.0
-    comp_pf_total = 0.0
-    combined_income = family.primary_income + family.secondary_income
-
-    for child in family.children:
-        child_pf, comp_pf = calc_ftb_a_child_rate_pf(child, combined_income, family)
-        total_pf += child_pf
-        comp_pf_total += comp_pf
-
-    annual_core = fortnightly_to_annual(total_pf)
-    supplement = RATES_2025["ftb_a"]["supplement_annual"] if total_pf > 0 else 0.0
-
-    return {
-        "core_pf": round(total_pf, 2),
-        "core_annual": round(annual_core, 2),
-        "supplement": supplement,
-        "annual_with_supplement": round(annual_core + supplement, 2),
-        "compliance_reduction_pf": round(comp_pf_total, 2),
-    }
+        core = min(core, ra["base_rate_pf"])
+    return max(core, 0)
 
 
-def calc_ftb_part_b(family: Family) -> Dict[str, float]:
-    rates_b = RATES_2025["ftb_b"]
+def calc_ftb_a(fam: Family) -> Dict[str, float]:
+    kids = len(fam.children)
+    rate_pf = sum(
+        calc_ftb_a_child_pf(ch, fam.primary_income + fam.secondary_income, kids, fam.receives_income_support)
+        for ch in fam.children
+    )
+    annual = pf_to_annual(rate_pf)
+    supp = RATES_2025["ftb_a"]["supplement_annual"] if rate_pf > 0 else 0.0
+    return {"pf": rate_pf, "annual": annual, "supp": supp, "annual_total": annual + supp}
 
-    if family.partnered:
-        secondary_income = family.secondary_income
-        if secondary_income <= rates_b["secondary_earner_free_area"]:
-            secondary_reduction = 0.0
-        else:
-            secondary_reduction = (secondary_income - rates_b["secondary_earner_free_area"]) * rates_b["taper"]
-        core_pf = (
-            rates_b["max_rate_pf"]["<5"] if min(child.age for child in family.children) < 5
-            else rates_b["max_rate_pf"]["5_18"]
-        )
-        core_pf = max(core_pf - secondary_reduction, 0)
-        if family.primary_income > rates_b["primary_earner_limit"]:
+
+def calc_ftb_b(fam: Family) -> Dict[str, float]:
+    rb = RATES_2025["ftb_b"]
+    youngest_age = min(ch.age for ch in fam.children)
+    base_pf = rb["max_rate_pf"]["<5" if youngest_age < 5 else "5_18"]
+
+    if fam.partnered:
+        # secondary earner test
+        sec_red = 0.0
+        if fam.secondary_income > rb["secondary_earner_free_area"]:
+            sec_red = (fam.secondary_income - rb["secondary_earner_free_area"]) * rb["taper"]
+        core_pf = max(base_pf - sec_red, 0)
+        # primary earner limit
+        if fam.primary_income > rb["primary_earner_limit"]:
             core_pf = 0.0
     else:
-        # Single parent: secondary earner test doesn't apply
-        core_pf = (
-            rates_b["max_rate_pf"]["<5"] if min(child.age for child in family.children) < 5
-            else rates_b["max_rate_pf"]["5_18"]
-        )
+        core_pf = base_pf
 
-    annual_core = fortnightly_to_annual(core_pf)
-    supplement = rates_b["supplement_annual"] if core_pf > 0 else 0.0
-
-    return {
-        "core_pf": round(core_pf, 2),
-        "core_annual": round(annual_core, 2),
-        "supplement": supplement,
-        "annual_with_supplement": round(annual_core + supplement, 2),
-    }
-
+    annual = pf_to_annual(core_pf)
+    supp = rb["supplement_annual"] if core_pf > 0 else 0.0
+    return {"pf": core_pf, "annual": annual, "supp": supp, "annual_total": annual + supp}
 
 ###############################################################################
 # STREAMLIT UI
 ###############################################################################
 
-st.set_page_config(page_title="Family Tax Benefit Calculator (2025‑26)",
-                   page_icon=":money_with_wings:",
-                   layout="centered")
+st.set_page_config("Family Tax Benefit Calculator 2024‑25", ":money_with_wings:")
 
-st.title("👶 Family Tax Benefit Calculator")
-st.caption("Rates effective 20 March 2025 – excludes end‑of‑year supplements until reconciliation.")
+st.title("👶 Family Tax Benefit Calculator – 2024‑25")
+st.caption("Figures current at 20 March 2025. Supplements are shown separately.")
 
-with st.expander("⚙️ Rate parameters"):
+with st.expander("🔧 Rate parameters (2024‑25)"):
     st.json(RATES_2025, expanded=False)
 
-# Basic user inputs -----------------------------------------------------------
+# ─── Household details ───────────────────────────────────────────────────────
+partnered = st.checkbox("Partnered / Couple household", value=True)
 
-st.header("Household Details")
+col_pi, col_si = st.columns(2 if partnered else 1)
+primary_income = col_pi.number_input(
+    "Primary earner taxable income ($ p.a.)",
+    min_value=0,
+    max_value=500_000,
+    value=0,
+    step=1_000,
+    format="%d",
+)
+secondary_income = 0
+if partnered:
+    secondary_income = col_si.number_input(
+        "Secondary earner taxable income ($ p.a.)",
+        min_value=0,
+        max_value=500_000,
+        value=0,
+        step=1_000,
+        format="%d",
+    )
 
-col1, col2 = st.columns(2)
-partnered = col1.checkbox("Partnered / Couple?", value=True)
-primary_income = col1.number_input("Primary earner taxable income ($ p.a.)", 0, 500_000
+rent_pf = st.number_input(
+    "Fortnightly rent ($)",
+    min_value=0.0,
+    max_value=5_000.0,
+    value=0.0,
+    step=10.0,
+    format="%0.2f",
+)
+
+receives_is = st.checkbox("Receiving an income support payment? (e.g. JobSeeker)")
+
+# ─── Children details ────────────────────────────────────────────────────────
+num_kids = st.number_input(
+    "Number of dependent children (max 10)",
+    min_value=1,
+    max_value=10,
+    value=1,
+    step=1,
+    format="%d",
+)
+
+children: List[Child] = []
+for i in range(int(num_kids)):
+    st.subheader(f"Child {i+1}")
+    c1, c2, c3, c4 = st.columns(4)
+    age = c1.slider("Age", 0, 19, 0, step=1, key=f"age_{i}")
+    immun = c2.checkbox("Immunised", value=True, key=f"imm_{i}")
+    hs = c3.checkbox("Healthy‑Start check (if age 4‑5)", value=True, key=f"hs_{i}")
+    mact = c4.checkbox("Maintenance action ok", value=True, key=f"ma_{i}")
+    children.append(Child(age, immun, hs, mact))
+
+# ─── Calculate ───────────────────────────────────────────────────────────────
+family = Family(
+    partnered=partnered,
+    primary_income=primary_income,
+    secondary_income=secondary_income,
+    children=children,
+    receives_income_support=receives_is,
+    rent_pf=rent_pf,
+)
+
+if st.button("Calculate FTB"):
+    a = calc_ftb_a(family)
+    b = calc_ftb_b(family)
+
+    st.success("Calculation complete 🎉")
+    st.subheader("FTB Part A")
+    st.write(f"Fortnightly: **${a['pf']:.2f}**")
+    st.write(f"Annual (ex‑supplement): **${a['annual']:.2f}**")
+    st.write(f"End‑of‑year supplement: **${a['supp']:.2f}**")
+    st.write(f"Annual incl. supplement: **${a['annual_total']:.2f}**")
+
+    st.subheader("FTB Part B")
+    st.write(f"Fortnightly: **${b['pf']:.2f}**")
+    st.write(f"Annual (ex‑supplement): **${b['annual']:.2f}**")
+    st.write(f"End‑of‑year supplement: **${b['supp']:.2f}**")
+    st.write(f"Annual incl. supplement: **${b['annual_total']:.2f}**")
+
+    total_annual = a["annual_total"] + b["annual_total"]
+    st.header(f"Total FTB annual (after supplements): ${total_annual:,.2f}")
