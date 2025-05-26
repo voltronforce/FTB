@@ -1,1028 +1,214 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
-from dataclasses import dataclass, field
-from typing import List, Dict, Tuple
-import json
+"""Family Tax Benefit & Rent Assistance Calculator
+==================================================
 
-# Configuration and Constants
-@dataclass
-class FTBRates:
-    """Store FTB rates and thresholds - 2024-25 Financial Year"""
-    # FTB Part A standard rates (annual) - from Family Assistance Guide
-    ftb_a_under_13_annual: float = 5788.90  # Method 1 - under 13 years
-    ftb_a_13_over_annual: float = 7529.95   # Method 1 - 13 years and over
-    ftb_a_base_rate_annual: float = 1857.85  # Method 2 - base rate
-    
-    # Convert to fortnightly rates
-    @property
-    def ftb_a_under_13_fortnightly(self) -> float:
-        return self.ftb_a_under_13_annual / 26
-    
-    @property
-    def ftb_a_13_over_fortnightly(self) -> float:
-        return self.ftb_a_13_over_annual / 26
-    
-    @property
-    def ftb_a_base_rate_fortnightly(self) -> float:
-        return self.ftb_a_base_rate_annual / 26
-    
-    # FTB Part B standard rates (annual) - CORRECTED 2024-25 rates
-    ftb_b_under_5_annual: float = 5372.80   # youngest child under 5 - CORRECTED
-    ftb_b_5_to_13_annual: float = 3883.60   # youngest child 5-13 (couples) or 5-18 (singles) - CORRECTED
-    
-    @property
-    def ftb_b_under_5_fortnightly(self) -> float:
-        return self.ftb_b_under_5_annual / 26
-    
-    @property
-    def ftb_b_5_over_fortnightly(self) -> float:
-        return self.ftb_b_5_to_13_annual / 26
-    
-    # Income test thresholds - 2024-25
-    ftb_a_income_free_area: float = 65189     # Up to this amount, full rate
-    ftb_a_higher_income_free_area: float = 115997  # Higher income test threshold
-    ftb_a_taper_rate_1: float = 0.20         # 20 cents per dollar reduction
-    ftb_a_taper_rate_2: float = 0.30         # 30 cents per dollar reduction (Method 2)
-    
-    ftb_b_income_free_area: float = 6789     # Secondary earner income free area
-    ftb_b_taper_rate: float = 0.20           # 20 cents per dollar reduction
-    ftb_b_primary_earner_limit: float = 117194  # Primary earner income limit
-    
-    # Supplements (annual) - 2024-25
-    ftb_a_supplement_rate: float = 916.15    # Per child
-    ftb_a_supplement_limit: float = 80000    # Income limit for supplement
-    ftb_b_supplement_rate: float = 448.95    # Per family
+Updated: 26 May 2025 (rates effective 20 Mar 2025)
+
+Key changes
+-----------
+* All maximum/base rates and thresholds brought into line with the *Guide to Australian Government Payments – 20 March 2025*.
+* Immunisation / Health‑start compliance penalties now apply a **$34.44 per‑fortnight** reduction (indexed each 1 July).
+* Maintenance‑action test now reduces the rate to **Base Rate** rather than zero.
+* Rates & thresholds moved to a JSON‑like structure (`RATES_2025`) for easier annual indexation.
+
+Notes
+-----
+* Annual amounts below exclude end‑of‑year supplements unless explicitly noted.
+* Supplements (`ftb_a_supplement`, `ftb_b_supplement`) are added at the end of the financial year if eligible.
+* All monetary amounts are stored in *dollars* (AUD).
+"""
+
+from __future__ import annotations
+import json
+import math
+from dataclasses import dataclass
+from pathlib import Path
+from typing import List, Dict, Tuple
+
+import streamlit as st
+
+###############################################################################
+# 2024‑25 RATES & THRESHOLDS
+###############################################################################
+
+RATES_2025: Dict[str, object] = {
+    "ftb_a": {
+        # Fortnightly core amounts (ex‑supplement)
+        "max_rate_pf": {
+            "0_12": 222.04,   # children aged 0‑12
+            "13_15": 288.82,  # children aged 13‑15
+            "16_19_secondary": 288.82,  # 16‑19 yo in secondary study
+        },
+        "base_rate_pf": 71.26,
+        # Supplements (paid after reconciliation)
+        "supplement_annual": 916.15,
+        # Income test
+        "lower_threshold": 65_189,
+        "higher_threshold": 115_997,
+        "primary_taper": 0.20,   # 20c per $ over lower threshold
+        "secondary_taper": 0.30, # 30c per $ over higher threshold
+    },
+    "ftb_b": {
+        # Fortnightly core amounts (ex‑supplement)
+        "max_rate_pf": {
+            "<5": 188.86,
+            "5_18": 131.74,
+        },
+        "supplement_annual": 448.95,
+        # Income test
+        "secondary_earner_free_area": 6_789,
+        "primary_earner_limit": 117_194,
+        "taper": 0.20,  # 20c per $ over free area for secondary earner
+    },
+    "compliance_reduction_pf": 34.44,  # per unmet requirement per child
+}
+
+###############################################################################
+# DATA CLASSES
+###############################################################################
+
+from dataclasses import dataclass
 
 @dataclass
 class Child:
-    """Store individual child information"""
     age: int
-    immunisation: bool = True
+    immunised: bool = True
     healthy_start: bool = True
-    maintenance_action: bool = True
+    maintenance_action_ok: bool = True  # Has parent taken reasonable maintenance action?
+
 
 @dataclass
-class FTBResult:
-    """Store calculation results"""
-    fortnightly_rate: float
-    test_type: str
-    base_rate: float = 0
-    compliance_reduction: float = 0
-    maintenance_reduction: float = 0
-    reason: str = ""
+class Family:
+    partnered: bool
+    primary_income: float
+    secondary_income: float = 0.0
+    children: List[Child] = None
+    receives_income_support: bool = False
+    rent_pf: float = 0.0  # Fortnightly rent
+    receives_rent_assistance: bool = False
 
-class FTBCalculator:
-    """Main calculator class for Family Tax Benefit calculations"""
-    
-    def __init__(self, rates: FTBRates):
-        self.rates = rates
-    
-    def calculate_ftb_part_a(self, child: Child, annual_income: float, income_support: bool) -> FTBResult:
-        """Calculate FTB Part A for a single child using correct Methods 1 and 2"""
-        
-        # Determine standard rate based on age (Method 1)
-        if child.age < 13:
-            standard_rate_annual = self.rates.ftb_a_under_13_annual
-        else:
-            standard_rate_annual = self.rates.ftb_a_13_over_annual
-        
-        standard_rate_fortnightly = standard_rate_annual / 26
-        base_rate_fortnightly = self.rates.ftb_a_base_rate_fortnightly
-        
-        # If on income support, get maximum rate (Method 1)
-        if income_support:
-            final_rate = standard_rate_fortnightly
-            test_type = "Income Support - Maximum Rate"
-        else:
-            # Apply income tests based on family income
-            if annual_income <= self.rates.ftb_a_income_free_area:
-                # Full standard rate (Method 1)
-                final_rate = standard_rate_fortnightly
-                test_type = "Method 1 - Maximum Rate"
-                
-            elif annual_income <= self.rates.ftb_a_higher_income_free_area:
-                # Method 1 - taper at 20 cents per dollar from standard rate to base rate
-                excess_income = annual_income - self.rates.ftb_a_income_free_area
-                annual_reduction = excess_income * self.rates.ftb_a_taper_rate_1
-                fortnightly_reduction = annual_reduction / 26
-                tapered_rate = standard_rate_fortnightly - fortnightly_reduction
-                final_rate = max(base_rate_fortnightly, tapered_rate)
-                test_type = "Method 1 - Income Test (20c taper)"
-                
-            else:
-                # Use Method 1 or Method 2, whichever gives higher payment
-                
-                # Method 1: Continue 20c taper until zero
-                excess_income_m1 = annual_income - self.rates.ftb_a_income_free_area
-                annual_reduction_m1 = excess_income_m1 * self.rates.ftb_a_taper_rate_1
-                fortnightly_reduction_m1 = annual_reduction_m1 / 26
-                method1_rate = max(0, standard_rate_fortnightly - fortnightly_reduction_m1)
-                
-                # Method 2: Base rate tapered at 30c per dollar above HIFA
-                excess_income_m2 = annual_income - self.rates.ftb_a_higher_income_free_area
-                annual_reduction_m2 = excess_income_m2 * self.rates.ftb_a_taper_rate_2
-                fortnightly_reduction_m2 = annual_reduction_m2 / 26
-                method2_rate = max(0, base_rate_fortnightly - fortnightly_reduction_m2)
-                
-                # Use whichever method gives the higher rate
-                if method1_rate >= method2_rate:
-                    final_rate = method1_rate
-                    test_type = "Method 1 - Extended taper (20c)"
-                else:
-                    final_rate = method2_rate
-                    test_type = "Method 2 - Base rate taper (30c)"
-        
-        # Apply compliance reductions
-        compliance_reduction = 0
-        if not child.immunisation:
-            compliance_reduction += final_rate * 0.5  # 50% reduction
-        if not child.healthy_start and child.age >= 4:
-            compliance_reduction += final_rate * 0.5  # 50% reduction (can exceed 100%)
-        
-        # Apply maintenance action test
-        maintenance_reduction = 0
-        if not child.maintenance_action:
-            maintenance_reduction = final_rate
-            final_rate = 0
-        else:
-            final_rate = max(0, final_rate - compliance_reduction)
-        
-        return FTBResult(
-            fortnightly_rate=final_rate,
-            test_type=test_type,
-            base_rate=final_rate + compliance_reduction,
-            compliance_reduction=compliance_reduction,
-            maintenance_reduction=maintenance_reduction
-        )
-    
-    def calculate_ftb_part_b(self, children: List[Child], family_type: str, annual_income: float, secondary_income: float = 0) -> FTBResult:
-        """Calculate FTB Part B with correct income tests based on official sources"""
-        
-        # Find youngest child age
-        youngest_age = min(child.age for child in children)
-        
-        # Determine maximum rate based on youngest child age
-        if youngest_age < 5:
-            max_rate_fortnightly = self.rates.ftb_b_under_5_fortnightly
-        else:
-            max_rate_fortnightly = self.rates.ftb_b_5_over_fortnightly
-        
-        if family_type == "single":
-            # For single parents: 
-            # - Get maximum rate if income ≤ $117,194 (primary earner limit)
-            # - NO secondary earner income test applies
-            
-            if annual_income > self.rates.ftb_b_primary_earner_limit:
-                return FTBResult(
-                    fortnightly_rate=0,
-                    test_type="Not payable - Income over primary earner limit",
-                    reason=f"Single parent income ${annual_income:,.0f} exceeds primary earner limit ${self.rates.ftb_b_primary_earner_limit:,.0f}"
-                )
-            
-            # Single parents get maximum rate if under primary earner limit
-            return FTBResult(
-                fortnightly_rate=max_rate_fortnightly,
-                test_type="Single Parent - Maximum Rate",
-                base_rate=max_rate_fortnightly,
-                reason=f"Single parent income ${annual_income:,.0f} under primary earner limit - maximum rate applies"
-            )
-        
-        else:  # couple
-            # For couples: 2-part income test
-            # 1. Primary earner (higher income) must be ≤ $117,194
-            # 2. Secondary earner (lower income) subject to $6,789 income free area + 20c taper
-            
-            # Age restriction: No Part B if youngest child 13+
-            if youngest_age >= 13:
-                return FTBResult(
-                    fortnightly_rate=0,
-                    test_type="Not payable - Couple with child 13+",
-                    reason="FTB Part B not payable to couples when youngest child is 13 or older"
-                )
-            
-            # Part 1: Check primary earner income limit
-            primary_earner_income = annual_income  # Higher earner
-            if primary_earner_income > self.rates.ftb_b_primary_earner_limit:
-                return FTBResult(
-                    fortnightly_rate=0,
-                    test_type="Not payable - Primary earner over limit",
-                    reason=f"Primary earner ${primary_earner_income:,.0f} exceeds limit ${self.rates.ftb_b_primary_earner_limit:,.0f}"
-                )
-            
-            # Part 2: Apply secondary earner income test
-            secondary_earner_income = secondary_income  # Lower earner
-            
-            if secondary_earner_income <= self.rates.ftb_b_income_free_area:
-                # Maximum rate if secondary earner under income free area
-                return FTBResult(
-                    fortnightly_rate=max_rate_fortnightly,
-                    test_type="Couple - Maximum Rate",
-                    base_rate=max_rate_fortnightly,
-                    reason=f"Secondary earner ${secondary_earner_income:,.0f} under income free area ${self.rates.ftb_b_income_free_area:,.0f}"
-                )
-            
-            # Calculate taper reduction (20c per dollar over income free area)
-            excess_income = secondary_earner_income - self.rates.ftb_b_income_free_area
-            annual_reduction = excess_income * self.rates.ftb_b_taper_rate
-            fortnightly_reduction = annual_reduction / 26
-            final_rate = max(0, max_rate_fortnightly - fortnightly_reduction)
-            
-            return FTBResult(
-                fortnightly_rate=final_rate,
-                test_type="Couple - Secondary Earner Taper",
-                base_rate=max_rate_fortnightly,
-                reason=f"Secondary earner ${secondary_earner_income:,.0f} - 20c taper on ${excess_income:,.0f} excess"
-            )
-    
-    def calculate_work_incentive(self, children: List[Child], family_type: str, current_income: float, secondary_income: float = 0) -> Dict:
-        """Calculate work incentive information based on correct FTB Part B rules"""
-        
-        # Calculate FTB Part A cut-off (based on primary/family income)
-        ftb_a_cutout = 0
-        if children:
-            sample_child = children[0]
-            if sample_child.age < 13:
-                max_annual_rate = self.rates.ftb_a_under_13_annual
-            else:
-                max_annual_rate = self.rates.ftb_a_13_over_annual
-            
-            # Income where 20c taper reduces payment to zero
-            ftb_a_cutout = self.rates.ftb_a_income_free_area + (max_annual_rate / self.rates.ftb_a_taper_rate_1)
-        
-        # Calculate FTB Part B cut-off
-        ftb_b_cutout = 0
-        if children:
-            youngest_age = min(child.age for child in children)
-            
-            if family_type == "single":
-                # For singles: cut-off is the primary earner limit ($117,194)
-                ftb_b_cutout = self.rates.ftb_b_primary_earner_limit
-                
-            elif youngest_age < 13:  # Couples with child under 13
-                # For couples: cut-off depends on secondary earner taper
-                if youngest_age < 5:
-                    max_annual_rate = self.rates.ftb_b_under_5_annual
-                else:
-                    max_annual_rate = self.rates.ftb_b_5_to_13_annual
-                
-                # Secondary earner cut-off (where taper reduces to zero)
-                secondary_cutout = self.rates.ftb_b_income_free_area + (max_annual_rate / self.rates.ftb_b_taper_rate)
-                ftb_b_cutout = secondary_cutout  # This is the relevant limit for couples
-        
-        # Calculate additional earning capacity
-        if family_type == "single":
-            # For singles: can earn up to primary earner limit
-            primary_capacity = max(0, ftb_b_cutout - current_income) if ftb_b_cutout > 0 else 0
-            ftb_a_capacity = max(0, ftb_a_cutout - current_income) if ftb_a_cutout > 0 else 0
-            additional_income_capacity = min(x for x in [primary_capacity, ftb_a_capacity] if x > 0) if any([primary_capacity, ftb_a_capacity]) else 0
-            primary_limit_reached = current_income >= ftb_b_cutout if ftb_b_cutout > 0 else False
-            
-        else:  # couples
-            # For couples: primary earner affects Part A, secondary earner affects Part B
-            primary_capacity = max(0, ftb_a_cutout - current_income) if ftb_a_cutout > 0 else 0
-            primary_ftb_b_capacity = max(0, self.rates.ftb_b_primary_earner_limit - current_income)
-            secondary_capacity = max(0, ftb_b_cutout - secondary_income) if ftb_b_cutout > 0 else 0
-            
-            # The limiting factor for additional income
-            additional_income_capacity = secondary_capacity  # Usually the most restrictive
-            primary_limit_reached = current_income >= self.rates.ftb_b_primary_earner_limit
-        
-        return {
-            "ftb_a_cutout": ftb_a_cutout,
-            "ftb_b_cutout": ftb_b_cutout,
-            "primary_earner_limit": self.rates.ftb_b_primary_earner_limit,
-            "additional_annual_income": additional_income_capacity,
-            "additional_weekly_income": additional_income_capacity / 52,
-            "family_type": family_type,
-            "secondary_income": secondary_income,
-            "primary_limit_reached": primary_limit_reached if family_type == "single" else False,
-            "note": "For couples, secondary earner income affects FTB Part B. For singles, primary earner limit applies."
-        }
 
-def main():
-    st.set_page_config(
-        page_title="Family Tax Benefit Calculator",
-        page_icon="🪲",
-        layout="wide",
-        initial_sidebar_state="expanded"
-    )
-    
-    # Initialize session state for rates first
-    if 'rates' not in st.session_state:
-        try:
-            st.session_state.rates = FTBRates()
-        except Exception as e:
-            st.error(f"Error initializing rates: {e}")
-            st.stop()
-    
-    # Custom CSS
-    st.markdown("""
-    <style>
-    .main-header {
-        background: linear-gradient(135deg, #2E8B57, #228B22);
-        padding: 2rem;
-        border-radius: 10px;
-        color: white;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    .beetle-logo {
-        font-size: 3rem;
-        margin-bottom: 1rem;
-    }
-    .result-card {
-        background: #f8f9fa;
-        padding: 1.5rem;
-        border-radius: 10px;
-        border-left: 4px solid #2E8B57;
-        margin: 1rem 0;
-    }
-    .work-incentive {
-        background: linear-gradient(135deg, #17a2b8, #138496);
-        color: white;
-        padding: 1.5rem;
-        border-radius: 10px;
-        margin: 1rem 0;
-    }
-    .alert-warning {
-        background: #fff3cd;
-        border: 1px solid #ffeaa7;
-        color: #856404;
-        padding: 1rem;
-        border-radius: 5px;
-        margin: 1rem 0;
-    }
-    .alert-info {
-        background: #d1ecf1;
-        border: 1px solid #bee5eb;
-        color: #0c5460;
-        padding: 1rem;
-        border-radius: 5px;
-        margin: 1rem 0;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    # Header
-    st.markdown("""
-    <div class="main-header">
-        <div class="beetle-logo">🪲</div>
-        <h1>Family Tax Benefit Calculator</h1>
-        <p>Calculate your Family Tax Benefit Part A and Part B entitlements - 2024-25 Financial Year</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Sidebar for navigation
-    st.sidebar.title("Navigation")
-    page = st.sidebar.selectbox(
-        "Choose a section:",
-        ["Calculator", "Results", "Charts", "Rates & Thresholds"]
-    )
-    
-    try:
-        if page == "Calculator":
-            calculator_page()
-        elif page == "Results":
-            results_page()
-        elif page == "Charts":
-            charts_page()
-        elif page == "Rates & Thresholds":
-            rates_page()
-    except Exception as e:
-        st.error(f"An error occurred: {e}")
-        st.info("Please try refreshing the page or resetting the rates in the 'Rates & Thresholds' tab.")
+###############################################################################
+# HELPER FUNCTIONS
+###############################################################################
 
-def calculator_page():
-    st.header("Family Tax Benefit Calculator")
-    
-    # Initialize rates if not present
-    if 'rates' not in st.session_state:
-        st.session_state.rates = FTBRates()
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("Family Information")
-        family_type = st.selectbox("Family Type:", ["couple", "single"], format_func=lambda x: "Couple" if x == "couple" else "Single Parent")
-        
-        if family_type == "couple":
-            st.info("💡 **For couples:** Enter the higher earner's income as 'Primary' and lower earner as 'Secondary'")
-            annual_income = st.number_input("Primary Earner Annual Income ($):", min_value=0.0, value=50000.0, step=1000.0, help="Higher earning partner's income")
-            secondary_income = st.number_input("Secondary Earner Annual Income ($):", min_value=0.0, value=15000.0, step=1000.0, help="Lower earning partner's income - subject to FTB Part B income test")
-        else:
-            annual_income = st.number_input("Annual Family Income ($):", min_value=0.0, value=50000.0, step=1000.0)
-            secondary_income = 0.0
-        
-        rent_assistance = st.number_input("Annual Rent Assistance ($):", min_value=0.0, value=0.0, step=100.0)
-        income_support = st.checkbox("Family receives income support payment")
-        
-        try:
-            st.info("📊 **Income Test Information:**\n"
-                    f"• FTB Part A Income Free Area: ${st.session_state.rates.ftb_a_income_free_area:,}\n"
-                    f"• FTB Part A Higher Income Free Area: ${st.session_state.rates.ftb_a_higher_income_free_area:,}\n"
-                    f"• FTB Part B Income Free Area (Secondary): ${st.session_state.rates.ftb_b_income_free_area:,}\n"
-                    f"• FTB Part B Primary Earner Limit: ${st.session_state.rates.ftb_b_primary_earner_limit:,}")
-        except AttributeError as e:
-            st.error(f"Error loading rates: {e}")
-            st.session_state.rates = FTBRates()  # Reset to defaults
-    
-    with col2:
-        st.subheader("Children Information")
-        num_children = st.number_input("Number of Children:", min_value=0, max_value=10, value=2)
-        
-        children = []
-        if num_children > 0:
-            for i in range(num_children):
-                with st.expander(f"Child {i+1} Details", expanded=True):
-                    age = st.number_input(f"Age of Child {i+1}:", min_value=0, max_value=25, value=5, key=f"age_{i}")
-                    immunisation = st.checkbox(f"Immunisation requirements met", value=True, key=f"imm_{i}")
-                    healthy_start = st.checkbox(f"Healthy Start for School requirements met", value=True, key=f"health_{i}")
-                    maintenance_action = st.checkbox(f"Maintenance Action Test passed", value=True, key=f"maint_{i}")
-                    
-                    if not immunisation:
-                        st.warning("⚠️ Non-compliance: 50% rate reduction applies")
-                    if not healthy_start and age >= 4:
-                        st.warning("⚠️ Non-compliance: 50% rate reduction applies")
-                    if not maintenance_action:
-                        st.error("🚫 Payment suspended: Maintenance action required")
-                    
-                    children.append(Child(
-                        age=age,
-                        immunisation=immunisation,
-                        healthy_start=healthy_start,
-                        maintenance_action=maintenance_action
-                    ))
-    
-    # Store calculation inputs in session state
-    if st.button("Calculate FTB", type="primary"):
-        if num_children == 0:
-            st.error("Please enter at least one child to calculate FTB.")
-        else:
-            calculator = FTBCalculator(st.session_state.rates)
-            
-            # Calculate FTB Part A for each child
-            ftb_a_results = []
-            for i, child in enumerate(children):
-                result = calculator.calculate_ftb_part_a(child, annual_income, income_support)
-                ftb_a_results.append({
-                    'child_index': i + 1,
-                    'age': child.age,
-                    'result': result
-                })
-            
-            # Calculate FTB Part B
-            ftb_b_result = calculator.calculate_ftb_part_b(children, family_type, annual_income, secondary_income)
-            
-            # Calculate totals
-            total_ftb_a_fortnightly = sum(r['result'].fortnightly_rate for r in ftb_a_results)
-            total_ftb_b_fortnightly = ftb_b_result.fortnightly_rate
-            total_fortnightly = total_ftb_a_fortnightly + total_ftb_b_fortnightly
-            total_annual = total_fortnightly * 26
-            
-            # Calculate supplements
-            ftb_a_supplement = 0
-            ftb_b_supplement = 0
-            
-            if total_ftb_a_fortnightly > 0 and annual_income <= st.session_state.rates.ftb_a_supplement_limit:
-                ftb_a_supplement = st.session_state.rates.ftb_a_supplement_rate * len(children)
-            
-            if total_ftb_b_fortnightly > 0:
-                ftb_b_supplement = st.session_state.rates.ftb_b_supplement_rate
-            
-            total_annual_with_supplements = total_annual + ftb_a_supplement + ftb_b_supplement
-            
-            # Calculate work incentive
-            work_incentive = calculator.calculate_work_incentive(children, family_type, annual_income, secondary_income)
-            
-            # Store results in session state
-            st.session_state.calculation_results = {
-                'family_type': family_type,
-                'annual_income': annual_income,
-                'secondary_income': secondary_income,
-                'rent_assistance': rent_assistance,
-                'income_support': income_support,
-                'children': children,
-                'ftb_a_results': ftb_a_results,
-                'ftb_b_result': ftb_b_result,
-                'total_ftb_a_fortnightly': total_ftb_a_fortnightly,
-                'total_ftb_b_fortnightly': total_ftb_b_fortnightly,
-                'total_fortnightly': total_fortnightly,
-                'total_annual': total_annual,
-                'ftb_a_supplement': ftb_a_supplement,
-                'ftb_b_supplement': ftb_b_supplement,
-                'total_annual_with_supplements': total_annual_with_supplements,
-                'work_incentive': work_incentive
-            }
-            
-            st.success("✅ Calculation completed! Check the Results tab.")
+def fortnightly_to_annual(amount_pf: float) -> float:
+    return round(amount_pf * 26, 2)
 
-def results_page():
-    st.header("Calculation Results")
-    
-    if 'calculation_results' not in st.session_state:
-        st.info("Please complete the calculation in the Calculator tab first.")
-        return
-    
-    results = st.session_state.calculation_results
-    
-    # Summary cards
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown(f"""
-        <div class="result-card">
-            <h4>💰 Total Family Entitlement</h4>
-            <h2>${results['total_annual_with_supplements']:.2f}</h2>
-            <p>Annual (including supplements)</p>
-            <h3>${results['total_fortnightly']:.2f}</h3>
-            <p>Fortnightly (regular payments)</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown(f"""
-        <div class="result-card">
-            <h4>📊 FTB Part A</h4>
-            <h2>${(results['total_ftb_a_fortnightly'] * 26 + results['ftb_a_supplement']):.2f}</h2>
-            <p>Annual (inc. supplement: ${results['ftb_a_supplement']:.2f})</p>
-            <h3>${results['total_ftb_a_fortnightly']:.2f}</h3>
-            <p>Fortnightly</p>
-            <p><strong>Assessment:</strong> {results['ftb_a_results'][0]['result'].test_type if results['ftb_a_results'] else 'N/A'}</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown(f"""
-        <div class="result-card">
-            <h4>👨‍👩‍👧‍👦 FTB Part B</h4>
-            <h2>${(results['total_ftb_b_fortnightly'] * 26 + results['ftb_b_supplement']):.2f}</h2>
-            <p>Annual (inc. supplement: ${results['ftb_b_supplement']:.2f})</p>
-            <h3>${results['total_ftb_b_fortnightly']:.2f}</h3>
-            <p>Fortnightly</p>
-            <p><strong>Assessment:</strong> {results['ftb_b_result'].test_type}</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    if results['ftb_b_result'].reason:
-        st.markdown(f"""
-        <div class="alert-warning">
-            ℹ️ <strong>FTB Part B Note:</strong> {results['ftb_b_result'].reason}
-        </div>
-        """, unsafe_allow_html=True)
-    
-    # Work Incentive Information
-    work_incentive = results['work_incentive']
-    
-    if family_type == "single":
-        if work_incentive['additional_annual_income'] > 0:
-            st.markdown(f"""
-            <div class="work-incentive">
-                <h4>💼 Work Incentive Information - Single Parent</h4>
-                <p><strong>Additional earning capacity:</strong></p>
-                <ul>
-                    <li>You can earn up to <strong>${work_incentive['additional_annual_income']:.0f}</strong> more annually (<strong>${work_incentive['additional_weekly_income']:.0f}</strong> per week)</li>
-                    <li><strong>FTB Part B limit:</strong> ${work_incentive['primary_earner_limit']:,.0f} annual income</li>
-                    <li><strong>FTB Part A cuts out at:</strong> ${work_incentive['ftb_a_cutout']:,.0f} annual income</li>
-                    <li><strong>Next threshold:</strong> Primary earner limit for FTB Part B</li>
-                </ul>
-                <p><em>As a single parent, you get maximum FTB Part B if your income is under ${work_incentive['primary_earner_limit']:,.0f}</em></p>
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown(f"""
-            <div class="work-incentive">
-                <h4>💼 Work Incentive Information - Single Parent</h4>
-                <p><strong>Your income is above the FTB Part B primary earner limit.</strong></p>
-                <p>Primary earner limit: ${work_incentive['primary_earner_limit']:,.0f}</p>
-                <p>Your income: ${results['annual_income']:,.0f}</p>
-            </div>
-            """, unsafe_allow_html=True)
-    else:  # couple
-        if work_incentive['additional_annual_income'] > 0:
-            st.markdown(f"""
-            <div class="work-incentive">
-                <h4>💼 Work Incentive Information - Couple</h4>
-                <p><strong>Income capacity analysis:</strong></p>
-                <ul>
-                    <li><strong>Primary earner</strong> (${results['annual_income']:,.0f}): {"✅ Under limit" if results['annual_income'] <= work_incentive['primary_earner_limit'] else "❌ Over limit"} (${work_incentive['primary_earner_limit']:,.0f})</li>
-                    <li><strong>Secondary earner</strong> (${results['secondary_income']:,.0f}): Can earn ${work_incentive['additional_annual_income']:.0f} more annually</li>
-                    <li><strong>FTB Part B</strong> reduces 20c per dollar over ${st.session_state.rates.ftb_b_income_free_area:,.0f} (secondary earner)</li>
-                    <li><strong>FTB Part A</strong> cuts out at: ${work_incentive['ftb_a_cutout']:,.0f} (primary earner)</li>
-                </ul>
-                <p><em>For couples: Primary earner must be under ${work_incentive['primary_earner_limit']:,.0f}, secondary earner income affects FTB Part B rate.</em></p>
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown(f"""
-            <div class="work-incentive">
-                <h4>💼 Work Incentive Information - Couple</h4>
-                <p><strong>Income limits reached:</strong></p>
-                <ul>
-                    <li><strong>Primary earner:</strong> ${results['annual_income']:,.0f} (Limit: ${work_incentive['primary_earner_limit']:,.0f})</li>
-                    <li><strong>Secondary earner:</strong> ${results['secondary_income']:,.0f} (FTB Part B may be reduced)</li>
-                </ul>
-                <p>Consider reviewing your income distribution or circumstances.</p>
-            </div>
-            """, unsafe_allow_html=True)
-    
-    st.markdown(f"""
-    <div class="alert-info">
-        <strong>🔍 FTB Part B Income Test Explanation:</strong><br>
-        <strong>Singles:</strong> Get maximum rate if income ≤ ${st.session_state.rates.ftb_b_primary_earner_limit:,.0f}<br>
-        <strong>Couples:</strong> Primary earner ≤ ${st.session_state.rates.ftb_b_primary_earner_limit:,.0f} AND secondary earner subject to ${st.session_state.rates.ftb_b_income_free_area:,.0f} + 20c taper<br>
-        {f"<strong>Your FTB Part B:</strong> {results['ftb_b_result'].reason}" if results['ftb_b_result'].reason else ""}
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Breakdown by Child
-    st.subheader("👶 Breakdown by Child")
-    for child_result in results['ftb_a_results']:
-        result = child_result['result']
-        st.markdown(f"""
-        <div class="result-card">
-            <h5>Child {child_result['child_index']} (Age: {child_result['age']})</h5>
-            <p><strong>FTB Part A Rate:</strong> ${result.fortnightly_rate:.2f} per fortnight (${result.fortnightly_rate * 26:.2f} annually)</p>
-            <p><strong>Assessment Method:</strong> {result.test_type}</p>
-            {f'<div class="alert-warning"><strong>⚠️ Compliance Reduction:</strong> ${result.compliance_reduction:.2f} fortnightly - Check immunisation and health requirements</div>' if result.compliance_reduction > 0 else ''}
-            {f'<div class="alert-warning"><strong>🚫 Maintenance Action Test:</strong> Payment suspended - Action required</div>' if result.maintenance_reduction > 0 else ''}
-        </div>
-        """, unsafe_allow_html=True)
-    
-    # Important Notes
-    rent_note = f"<li>Rent Assistance (${results['rent_assistance']:.2f}) noted but not calculated in this tool</li>" if results['rent_assistance'] > 0 else ""
-    st.markdown(f"""
-    <div class="alert-info">
-        <strong>📝 Important Notes:</strong>
-        <ul>
-            <li>These calculations use the correct 2024-25 rates and Methods 1 & 2 from the Family Assistance Act</li>
-            <li>Income tests apply 20c and 30c taper rates as per official guidelines</li>
-            <li>Supplements are paid annually after end-of-year reconciliation</li>
-            <li>Contact Services Australia on 136 150 for official assessments</li>
-            <li>Based on Family Assistance Guide 3.1.1.20 and current Services Australia rates</li>
-            {rent_note}
-        </ul>
-    </div>
-    """, unsafe_allow_html=True)
 
-def charts_page():
-    st.header("📈 Family Tax Benefit Rate Charts")
-    
-    if 'calculation_results' not in st.session_state:
-        st.info("Please complete the calculation in the Calculator tab first to see personalized charts.")
-        # Show default charts
-        children = [Child(age=5)]
-        family_type = "single"
-        secondary_income = 0
+def calc_ftb_a_child_rate_pf(child: Child, family_income: float, family: Family) -> Tuple[float, float]:
+    """Return (core_rate_pf_after_income_test, compliance_reduction_pf)."""
+    rates_a = RATES_2025["ftb_a"]
+
+    # Determine max or base core rate for age
+    if child.age <= 12:
+        core_pf = rates_a["max_rate_pf"]["0_12"]
+    elif child.age <= 15:
+        core_pf = rates_a["max_rate_pf"]["13_15"]
     else:
-        results = st.session_state.calculation_results
-        children = results['children']
-        family_type = results['family_type']
-        secondary_income = results.get('secondary_income', 0)
-    
-    calculator = FTBCalculator(st.session_state.rates)
-    
-    # Generate FTB Part A Chart
-    st.subheader("📊 FTB Part A Rate by Annual Income")
-    
-    income_range = list(range(0, 150001, 2000))
-    ftb_a_rates = []
-    
-    for income in income_range:
-        total_rate = 0
-        for child in children:
-            result = calculator.calculate_ftb_part_a(child, income, False)
-            total_rate += result.fortnightly_rate
-        ftb_a_rates.append(total_rate)
-    
-    fig_a = go.Figure()
-    fig_a.add_trace(go.Scatter(
-        x=income_range,
-        y=ftb_a_rates,
-        mode='lines',
-        name='FTB Part A ($/fortnight)',
-        line=dict(color='#2E8B57', width=3),
-        fill='tonexty'
-    ))
-    
-    # Add threshold lines with current rates
-    fig_a.add_vline(x=st.session_state.rates.ftb_a_income_free_area, 
-                   line_dash="dash", line_color="red",
-                   annotation_text="Income Free Area ($65,189)")
-    fig_a.add_vline(x=st.session_state.rates.ftb_a_higher_income_free_area, 
-                   line_dash="dash", line_color="orange",
-                   annotation_text="Higher Income Free Area ($115,997)")
-    
-    fig_a.update_layout(
-        title="FTB Part A Rate by Annual Income (Method 1 & 2)",
-        xaxis_title="Annual Family Income ($)",
-        yaxis_title="Fortnightly Rate ($)",
-        hovermode='x unified',
-        showlegend=True
-    )
-    
-    st.plotly_chart(fig_a, use_container_width=True)
-    
-    # Generate FTB Part B Chart
-    st.subheader("📈 FTB Part B Rate by Annual Income")
-    
-    income_range_b = list(range(0, 50001, 1000))
-    ftb_b_rates = []
-    
-    for income in income_range_b:
-        if family_type == "couple":
-            # For couples, vary the secondary income while keeping primary income constant
-            result = calculator.calculate_ftb_part_b(children, family_type, 50000, income)  # Assume $50k primary
+        core_pf = rates_a["max_rate_pf"]["16_19_secondary"]
+
+    # Apply income test unless family receives an income support payment
+    if not family.receives_income_support and family_income > rates_a["lower_threshold"]:
+        excess = family_income - rates_a["lower_threshold"]
+        if family_income <= rates_a["higher_threshold"]:
+            reduction = excess * rates_a["primary_taper"]
         else:
-            # For singles, vary the family income
-            result = calculator.calculate_ftb_part_b(children, family_type, income, 0)
-        ftb_b_rates.append(result.fortnightly_rate)
-    
-    fig_b = go.Figure()
-    fig_b.add_trace(go.Scatter(
-        x=income_range_b,
-        y=ftb_b_rates,
-        mode='lines',
-        name='FTB Part B ($/fortnight)',
-        line=dict(color='#17a2b8', width=3),
-        fill='tonexty'
-    ))
-    
-    # Add threshold lines
-    fig_b.add_vline(x=st.session_state.rates.ftb_b_income_free_area, 
-                   line_dash="dash", line_color="red",
-                   annotation_text=f"Income Free Area (${st.session_state.rates.ftb_b_income_free_area:,.0f})")
-    
-    if family_type == "couple":
-        fig_b.add_vline(x=st.session_state.rates.ftb_b_primary_earner_limit, 
-                       line_dash="dash", line_color="purple",
-                       annotation_text=f"Primary Earner Limit (${st.session_state.rates.ftb_b_primary_earner_limit:,.0f})")
-    
-    fig_b.update_layout(
-        title=f"FTB Part B Rate by {'Secondary Earner' if family_type == 'couple' else 'Family'} Income ({family_type.title()} Family)",
-        xaxis_title=f"Annual {'Secondary Earner' if family_type == 'couple' else 'Family'} Income ($)",
-        yaxis_title="Fortnightly Rate ($)",
-        hovermode='x unified',
-        showlegend=True
-    )
-    
-    st.plotly_chart(fig_b, use_container_width=True)
-    
-    # Rate explanation
-    st.markdown("""
-    ### 📖 Chart Explanation
-    
-    **FTB Part A:**
-    - **Method 1:** 20c reduction per dollar above Income Free Area ($65,189)
-    - **Method 2:** 30c reduction per dollar above Higher Income Free Area ($115,997) 
-    - The system automatically uses whichever method gives the higher payment
-    
-    **FTB Part B:**
-    - 20c reduction per dollar above Income Free Area ($6,789)
-    - Different rates apply based on youngest child's age
-    - Couples have additional primary earner income limits
-    """)
+            red1 = (rates_a["higher_threshold"] - rates_a["lower_threshold"]) * rates_a["primary_taper"]
+            red2 = (family_income - rates_a["higher_threshold"]) * rates_a["secondary_taper"]
+            reduction = red1 + red2
+        core_pf = max(core_pf - (reduction / len(family.children)), 0)
 
-def rates_page():
-    st.header("⚙️ FTB Rates and Thresholds (2024-25)")
-    st.info("These rates have been updated to reflect the correct 2024-25 FTB Part B maximum rates.")
-    st.success("✅ **FTB Part B rates corrected:** Under 5: $5,372.80 | 5+ years: $3,883.60")
-    
-    # Current vs Editable rates
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("📊 FTB Part A Rates (Annual)")
-        
-        st.session_state.rates.ftb_a_under_13_annual = st.number_input(
-            "Standard rate - under 13 years:", 
-            value=st.session_state.rates.ftb_a_under_13_annual, 
-            step=1.0,
-            help="Official rate: $5,788.90 per year"
-        )
-        st.session_state.rates.ftb_a_13_over_annual = st.number_input(
-            "Standard rate - 13 years and over:", 
-            value=st.session_state.rates.ftb_a_13_over_annual, 
-            step=1.0,
-            help="Official rate: $7,529.95 per year"
-        )
-        st.session_state.rates.ftb_a_base_rate_annual = st.number_input(
-            "Base rate (Method 2):", 
-            value=st.session_state.rates.ftb_a_base_rate_annual, 
-            step=1.0,
-            help="Official rate: $1,857.85 per year"
-        )
-        
-        st.write("**Fortnightly Equivalents:**")
-        st.write(f"• Under 13: ${st.session_state.rates.ftb_a_under_13_fortnightly:.2f}")
-        st.write(f"• 13+ years: ${st.session_state.rates.ftb_a_13_over_fortnightly:.2f}")
-        st.write(f"• Base rate: ${st.session_state.rates.ftb_a_base_rate_fortnightly:.2f}")
-    
-    with col2:
-        st.subheader("👨‍👩‍👧‍👦 FTB Part B Rates (Annual)")
-        
-        st.session_state.rates.ftb_b_under_5_annual = st.number_input(
-            "Standard rate - youngest under 5:", 
-            value=st.session_state.rates.ftb_b_under_5_annual, 
-            step=1.0,
-            help="Corrected official rate: $5,372.80 per year"
-        )
-        st.session_state.rates.ftb_b_5_to_13_annual = st.number_input(
-            "Standard rate - youngest 5+:", 
-            value=st.session_state.rates.ftb_b_5_to_13_annual, 
-            step=1.0,
-            help="Corrected official rate: $3,883.60 per year"
-        )
-        
-        st.write("**Fortnightly Equivalents:**")
-        st.write(f"• Under 5: ${st.session_state.rates.ftb_b_under_5_fortnightly:.2f}")
-        st.write(f"• 5+ years: ${st.session_state.rates.ftb_b_5_over_fortnightly:.2f}")
-    
-    # Income Test Thresholds
-    st.subheader("💰 Income Test Thresholds")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        st.session_state.rates.ftb_a_income_free_area = st.number_input(
-            "FTB Part A - Income Free Area:", 
-            value=st.session_state.rates.ftb_a_income_free_area, 
-            step=1.0,
-            help="Income up to this amount receives full rate"
-        )
-        st.session_state.rates.ftb_a_higher_income_free_area = st.number_input(
-            "FTB Part A - Higher Income Free Area:", 
-            value=st.session_state.rates.ftb_a_higher_income_free_area, 
-            step=1.0,
-            help="Threshold for Method 2 calculation"
-        )
-        st.session_state.rates.ftb_b_income_free_area = st.number_input(
-            "FTB Part B - Income Free Area:", 
-            value=st.session_state.rates.ftb_b_income_free_area, 
-            step=1.0,
-            help="Secondary earner income threshold"
-        )
-    
-    with col2:
-        st.session_state.rates.ftb_a_taper_rate_1 = st.number_input(
-            "FTB Part A - Taper Rate 1 (20c):", 
-            value=st.session_state.rates.ftb_a_taper_rate_1, 
-            step=0.01,
-            help="Method 1 taper rate"
-        )
-        st.session_state.rates.ftb_a_taper_rate_2 = st.number_input(
-            "FTB Part A - Taper Rate 2 (30c):", 
-            value=st.session_state.rates.ftb_a_taper_rate_2, 
-            step=0.01,
-            help="Method 2 taper rate"
-        )
-        st.session_state.rates.ftb_b_taper_rate = st.number_input(
-            "FTB Part B - Taper Rate (20c):", 
-            value=st.session_state.rates.ftb_b_taper_rate, 
-            step=0.01,
-            help="Part B income test taper"
-        )
-        st.session_state.rates.ftb_b_primary_earner_limit = st.number_input(
-            "FTB Part B - Primary Earner Limit:", 
-            value=st.session_state.rates.ftb_b_primary_earner_limit, 
-            step=1.0,
-            help="Maximum primary earner income for couples"
-        )
-    
-    # Supplements
-    st.subheader("🎁 Supplements (Annual)")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        st.session_state.rates.ftb_a_supplement_rate = st.number_input(
-            "FTB Part A Supplement (per child):", 
-            value=st.session_state.rates.ftb_a_supplement_rate, 
-            step=0.01,
-            help="Annual supplement per eligible child"
-        )
-        st.session_state.rates.ftb_b_supplement_rate = st.number_input(
-            "FTB Part B Supplement (per family):", 
-            value=st.session_state.rates.ftb_b_supplement_rate, 
-            step=0.01,
-            help="Annual supplement per eligible family"
-        )
-    
-    with col2:
-        st.session_state.rates.ftb_a_supplement_limit = st.number_input(
-            "FTB Part A Supplement income limit:", 
-            value=st.session_state.rates.ftb_a_supplement_limit, 
-            step=1.0,
-            help="Family income must be under this amount"
-        )
-    
-    # Display current rates in a comprehensive table
-    st.subheader("📋 Current Rate Summary")
-    
-    rates_data = {
-        "Component": [
-            "FTB Part A - Under 13 (annual)",
-            "FTB Part A - 13+ years (annual)", 
-            "FTB Part A - Base rate (annual)",
-            "FTB Part A - Under 13 (fortnightly)",
-            "FTB Part A - 13+ years (fortnightly)",
-            "FTB Part A - Base rate (fortnightly)",
-            "FTB Part B - Under 5 (annual)",
-            "FTB Part B - 5+ years (annual)",
-            "FTB Part B - Under 5 (fortnightly)",
-            "FTB Part B - 5+ years (fortnightly)",
-            "Income Free Area - Part A",
-            "Higher Income Free Area - Part A",
-            "Income Free Area - Part B",
-            "Primary Earner Limit - Part B",
-            "FTB Part A Supplement",
-            "FTB Part B Supplement"
-        ],
-        "Rate/Amount ($)": [
-            f"{st.session_state.rates.ftb_a_under_13_annual:.2f}",
-            f"{st.session_state.rates.ftb_a_13_over_annual:.2f}",
-            f"{st.session_state.rates.ftb_a_base_rate_annual:.2f}",
-            f"{st.session_state.rates.ftb_a_under_13_fortnightly:.2f}",
-            f"{st.session_state.rates.ftb_a_13_over_fortnightly:.2f}",
-            f"{st.session_state.rates.ftb_a_base_rate_fortnightly:.2f}",
-            f"{st.session_state.rates.ftb_b_under_5_annual:.2f}",
-            f"{st.session_state.rates.ftb_b_5_to_13_annual:.2f}",
-            f"{st.session_state.rates.ftb_b_under_5_fortnightly:.2f}",
-            f"{st.session_state.rates.ftb_b_5_over_fortnightly:.2f}",
-            f"{st.session_state.rates.ftb_a_income_free_area:.0f}",
-            f"{st.session_state.rates.ftb_a_higher_income_free_area:.0f}",
-            f"{st.session_state.rates.ftb_b_income_free_area:.0f}",
-            f"{st.session_state.rates.ftb_b_primary_earner_limit:.0f}",
-            f"{st.session_state.rates.ftb_a_supplement_rate:.2f}",
-            f"{st.session_state.rates.ftb_b_supplement_rate:.2f}"
-        ],
-        "Official Source": [
-            "Family Assistance Guide 3.1.1.20",
-            "Family Assistance Guide 3.1.1.20",
-            "Family Assistance Guide 3.1.1.20",
-            "Calculated (annual ÷ 26)",
-            "Calculated (annual ÷ 26)",
-            "Calculated (annual ÷ 26)",
-            "Family Assistance Guide 3.1.1.20",
-            "Family Assistance Guide 3.1.1.20",
-            "Calculated (annual ÷ 26)",
-            "Calculated (annual ÷ 26)",
-            "Family Assistance Guide 3.1.1.20",
-            "Family Assistance Guide 3.1.1.20",
-            "Family Assistance Guide 3.1.1.20",
-            "Family Assistance Guide 3.1.1.20",
-            "Services Australia",
-            "Services Australia"
-        ]
+    # Compliance reductions (flat dollar) – applied *after* income test
+    compliance_pf = 0.0
+    if not child.immunised:
+        compliance_pf += RATES_2025["compliance_reduction_pf"]
+    if not child.healthy_start and 4 <= child.age <= 5:
+        compliance_pf += RATES_2025["compliance_reduction_pf"]
+
+    core_pf = max(core_pf - compliance_pf, 0)
+
+    # Maintenance action test: if failed, limit to base rate
+    if not child.maintenance_action_ok:
+        core_pf = min(core_pf, rates_a["base_rate_pf"])
+
+    return core_pf, compliance_pf
+
+
+def calc_ftb_part_a(family: Family) -> Dict[str, float]:
+    """Return a dict with fortnightly & annual totals incl. supplements."""
+    total_pf = 0.0
+    comp_pf_total = 0.0
+    combined_income = family.primary_income + family.secondary_income
+
+    for child in family.children:
+        child_pf, comp_pf = calc_ftb_a_child_rate_pf(child, combined_income, family)
+        total_pf += child_pf
+        comp_pf_total += comp_pf
+
+    annual_core = fortnightly_to_annual(total_pf)
+    supplement = RATES_2025["ftb_a"]["supplement_annual"] if total_pf > 0 else 0.0
+
+    return {
+        "core_pf": round(total_pf, 2),
+        "core_annual": round(annual_core, 2),
+        "supplement": supplement,
+        "annual_with_supplement": round(annual_core + supplement, 2),
+        "compliance_reduction_pf": round(comp_pf_total, 2),
     }
-    
-    df = pd.DataFrame(rates_data)
-    st.dataframe(df, use_container_width=True)
-    
-    # Reset and validation buttons
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🔄 Reset to Official Rates"):
-            st.session_state.rates = FTBRates()
-            st.success("Rates reset to official 2024-25 values!")
-            st.rerun()
-    
-    with col2:
-        if st.button("✅ Validate Current Rates"):
-            official_rates = FTBRates()
-            differences = []
-            
-            if abs(st.session_state.rates.ftb_a_under_13_annual - official_rates.ftb_a_under_13_annual) > 0.01:
-                differences.append("FTB Part A Under 13")
-            if abs(st.session_state.rates.ftb_a_income_free_area - official_rates.ftb_a_income_free_area) > 0.01:
-                differences.append("Income Free Area")
-            
-            if differences:
-                st.warning(f"⚠️ Modified rates detected: {', '.join(differences)}")
-            else:
-                st.success("✅ All rates match official 2024-25 values")
-    
-    # Information about rate sources
-    st.markdown("""
-    ### 📚 Rate Sources and Methodology
-    
-    **Official Sources:**
-    - Family Assistance Guide 3.1.1.20 - Current FTB rates & income test amounts
-    - Services Australia FTB Payment Rates pages
-    - Family Assistance Act 1999 - Legislative framework
-    
-    **Calculation Methods:**
-    - **Method 1:** Used when family income ≤ $115,997 (Higher Income Free Area)
-    - **Method 2:** Used when family income > $115,997 (alternative calculation)
-    - System automatically applies the method giving the higher payment rate
-    
-    **Key Features:**
-    - Rates are indexed annually on 1 July
-    - Supplements paid after end-of-year reconciliation
-    - Compliance requirements may reduce payments by up to 50%
-    - Maintenance Action Test can suspend payments entirely
-    """)
 
-if __name__ == "__main__":
-    main()
+
+def calc_ftb_part_b(family: Family) -> Dict[str, float]:
+    rates_b = RATES_2025["ftb_b"]
+
+    if family.partnered:
+        secondary_income = family.secondary_income
+        if secondary_income <= rates_b["secondary_earner_free_area"]:
+            secondary_reduction = 0.0
+        else:
+            secondary_reduction = (secondary_income - rates_b["secondary_earner_free_area"]) * rates_b["taper"]
+        core_pf = (
+            rates_b["max_rate_pf"]["<5"] if min(child.age for child in family.children) < 5
+            else rates_b["max_rate_pf"]["5_18"]
+        )
+        core_pf = max(core_pf - secondary_reduction, 0)
+        if family.primary_income > rates_b["primary_earner_limit"]:
+            core_pf = 0.0
+    else:
+        # Single parent: secondary earner test doesn't apply
+        core_pf = (
+            rates_b["max_rate_pf"]["<5"] if min(child.age for child in family.children) < 5
+            else rates_b["max_rate_pf"]["5_18"]
+        )
+
+    annual_core = fortnightly_to_annual(core_pf)
+    supplement = rates_b["supplement_annual"] if core_pf > 0 else 0.0
+
+    return {
+        "core_pf": round(core_pf, 2),
+        "core_annual": round(annual_core, 2),
+        "supplement": supplement,
+        "annual_with_supplement": round(annual_core + supplement, 2),
+    }
+
+
+###############################################################################
+# STREAMLIT UI
+###############################################################################
+
+st.set_page_config(page_title="Family Tax Benefit Calculator (2025‑26)",
+                   page_icon=":money_with_wings:",
+                   layout="centered")
+
+st.title("👶 Family Tax Benefit Calculator")
+st.caption("Rates effective 20 March 2025 – excludes end‑of‑year supplements until reconciliation.")
+
+with st.expander("⚙️ Rate parameters"):
+    st.json(RATES_2025, expanded=False)
+
+# Basic user inputs -----------------------------------------------------------
+
+st.header("Household Details")
+
+col1, col2 = st.columns(2)
+partnered = col1.checkbox("Partnered / Couple?", value=True)
+primary_income = col1.number_input("Primary earner taxable income ($ p.a.)", 0, 500_000
