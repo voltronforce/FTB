@@ -1,4 +1,18 @@
 from __future__ import annotations
+
+###############################################################################
+# Streamlit Setup - MUST BE FIRST
+###############################################################################
+import streamlit as st
+
+# Page configuration MUST be the very first Streamlit command
+st.set_page_config(
+    page_title="DSS – Family Tax Benefit Calculator 2024‑25",
+    page_icon="🐞", 
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
 """
 Department of Social Services – Family Tax Benefit Calculator (2024‑25)
 =======================================================================
@@ -16,12 +30,12 @@ Enhanced Visual Design (May 2025)
 Run with:
     streamlit run enhanced_ftb_calculator.py
 """
+
 ###############################################################################
 # Imports & Setup
 ###############################################################################
 from dataclasses import dataclass
 from typing import List, Dict, Tuple, Optional
-import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -29,7 +43,7 @@ import numpy as np
 import os
 
 # ---------------------------------------------------------------------------
-# Page configuration & Enhanced CSS
+# Enhanced CSS & Styling
 # ---------------------------------------------------------------------------
 PRIMARY = "#00558B"  # DSS navy
 ACCENT  = "#009CA6"  # DSS teal
@@ -37,13 +51,6 @@ SECONDARY = "#4A90E2"  # Light blue
 SUCCESS = "#28A745"   # Green
 WARNING = "#FFC107"   # Amber
 LIGHT_GRAY = "#F8F9FA"
-
-st.set_page_config(
-    page_title="DSS – Family Tax Benefit Calculator 2024‑25",
-    page_icon="🐞", 
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
 
 st.markdown(f"""
 <style>
