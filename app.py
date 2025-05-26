@@ -159,29 +159,11 @@ class FTBCalculator:
             maintenance_reduction=maintenance_reduction
         )
     
-    def calculate_ftb_part_b(self, children: List[Child], family_type: str, annual_income: float) -> FTBResult:
-        """Calculate FTB Part B with correct income tests"""
+    def calculate_ftb_part_b(self, children: List[Child], family_type: str, annual_income: float, secondary_income: float = 0) -> FTBResult:
+        """Calculate FTB Part B with correct income tests for singles vs couples"""
         
         # Find youngest child age
         youngest_age = min(child.age for child in children)
-        
-        # For couples - different rules apply
-        if family_type == "couple":
-            # Couples with youngest child 13+ get no FTB Part B
-            if youngest_age >= 13:
-                return FTBResult(
-                    fortnightly_rate=0,
-                    test_type="Not payable - Couple with child 13+",
-                    reason="FTB Part B is not payable to couples when youngest child is 13 or older"
-                )
-            
-            # For couples, primary earner must be under limit
-            if annual_income > self.rates.ftb_b_primary_earner_limit:
-                return FTBResult(
-                    fortnightly_rate=0,
-                    test_type="Not payable - Primary earner over limit",
-                    reason=f"Primary earner income exceeds ${self.rates.ftb_b_primary_earner_limit:,.0f}"
-                )
         
         # Determine maximum rate based on youngest child age
         if youngest_age < 5:
@@ -189,38 +171,75 @@ class FTBCalculator:
         else:
             max_rate_fortnightly = self.rates.ftb_b_5_over_fortnightly
         
-        # For single parents, use family income directly
-        # For couples, this should be secondary earner income, but simplified here
-        test_income = annual_income
-        
-        # Apply income test
-        if test_income <= self.rates.ftb_b_income_free_area:
+        if family_type == "single":
+            # For single parents: use family income as primary earner income
+            primary_earner_income = annual_income
+            
+            # Check primary earner income limit
+            if primary_earner_income > self.rates.ftb_b_primary_earner_limit:
+                return FTBResult(
+                    fortnightly_rate=0,
+                    test_type="Not payable - Income over primary earner limit",
+                    reason=f"Single parent income (${primary_earner_income:,.0f}) exceeds primary earner limit (${self.rates.ftb_b_primary_earner_limit:,.0f})"
+                )
+            
+            # Single parents get maximum rate if under primary earner limit
             return FTBResult(
                 fortnightly_rate=max_rate_fortnightly,
-                test_type="Under Income Free Area",
-                base_rate=max_rate_fortnightly
+                test_type="Single Parent - Maximum Rate",
+                base_rate=max_rate_fortnightly,
+                reason=f"Single parent under primary earner limit gets maximum rate"
             )
         
-        # Calculate taper reduction
-        excess_income = test_income - self.rates.ftb_b_income_free_area
-        annual_reduction = excess_income * self.rates.ftb_b_taper_rate
-        fortnightly_reduction = annual_reduction / 26
-        final_rate = max(0, max_rate_fortnightly - fortnightly_reduction)
-        
-        return FTBResult(
-            fortnightly_rate=final_rate,
-            test_type="Income Test Applied (20c taper)",
-            base_rate=max_rate_fortnightly
-        )
+        else:  # couple
+            # For couples - different rules apply based on youngest child age
+            if youngest_age >= 13:
+                return FTBResult(
+                    fortnightly_rate=0,
+                    test_type="Not payable - Couple with child 13+",
+                    reason="FTB Part B is not payable to couples when youngest child is 13 or older"
+                )
+            
+            # Check primary earner income limit first
+            primary_earner_income = annual_income  # Assuming this is the higher earner
+            if primary_earner_income > self.rates.ftb_b_primary_earner_limit:
+                return FTBResult(
+                    fortnightly_rate=0,
+                    test_type="Not payable - Primary earner over limit",
+                    reason=f"Primary earner income (${primary_earner_income:,.0f}) exceeds limit (${self.rates.ftb_b_primary_earner_limit:,.0f})"
+                )
+            
+            # Apply secondary earner income test
+            secondary_earner_income = secondary_income  # This should be the lower earner's income
+            
+            if secondary_earner_income <= self.rates.ftb_b_income_free_area:
+                return FTBResult(
+                    fortnightly_rate=max_rate_fortnightly,
+                    test_type="Couple - Maximum Rate (Secondary earner under threshold)",
+                    base_rate=max_rate_fortnightly,
+                    reason=f"Secondary earner income (${secondary_earner_income:,.0f}) under income free area"
+                )
+            
+            # Calculate taper reduction based on secondary earner's excess income
+            excess_income = secondary_earner_income - self.rates.ftb_b_income_free_area
+            annual_reduction = excess_income * self.rates.ftb_b_taper_rate
+            fortnightly_reduction = annual_reduction / 26
+            final_rate = max(0, max_rate_fortnightly - fortnightly_reduction)
+            
+            return FTBResult(
+                fortnightly_rate=final_rate,
+                test_type="Couple - Secondary Earner Income Test (20c taper)",
+                base_rate=max_rate_fortnightly,
+                reason=f"Secondary earner income test applied: ${secondary_earner_income:,.0f} - ${self.rates.ftb_b_income_free_area:,.0f} = ${excess_income:,.0f} excess"
+            )
     
-    def calculate_work_incentive(self, children: List[Child], family_type: str, current_income: float) -> Dict:
+    def calculate_work_incentive(self, children: List[Child], family_type: str, current_income: float, secondary_income: float = 0) -> Dict:
         """Calculate work incentive information with accurate cut-off points"""
         
-        # Calculate FTB Part A cut-off
+        # Calculate FTB Part A cut-off (based on primary/family income)
         ftb_a_cutout = 0
         if children:
             # Use the income where payment reaches zero for first child
-            # This varies by calculation method used
             sample_child = children[0]
             
             # Estimate cut-off using Method 1 (20c taper from income free area)
@@ -237,26 +256,46 @@ class FTBCalculator:
         if children:
             youngest_age = min(child.age for child in children)
             
-            if family_type == "single" or (family_type == "couple" and youngest_age < 13):
+            if family_type == "single":
+                # For singles, cut-off is the primary earner limit
+                ftb_b_cutout = self.rates.ftb_b_primary_earner_limit
+                
+            elif youngest_age < 13:  # Couples with child under 13
+                # For couples, secondary earner income test applies
                 if youngest_age < 5:
                     max_annual_rate = self.rates.ftb_b_under_5_annual
                 else:
                     max_annual_rate = self.rates.ftb_b_5_to_13_annual
                 
-                ftb_b_cutout = self.rates.ftb_b_income_free_area + (max_annual_rate / self.rates.ftb_b_taper_rate)
+                # Cut-off based on secondary earner income
+                secondary_cutout = self.rates.ftb_b_income_free_area + (max_annual_rate / self.rates.ftb_b_taper_rate)
+                
+                # Also limited by primary earner limit
+                ftb_b_cutout = min(self.rates.ftb_b_primary_earner_limit, secondary_cutout)
         
-        # Determine the earliest cut-off
-        cutoffs = [x for x in [ftb_a_cutout, ftb_b_cutout] if x > 0]
-        earliest_cutout = min(cutoffs) if cutoffs else 0
-        
-        additional_income_capacity = max(0, earliest_cutout - current_income)
+        # Determine additional earning capacity
+        if family_type == "single":
+            # For singles, compare against family income
+            additional_income_capacity = max(0, min(ftb_a_cutout, ftb_b_cutout) - current_income) if ftb_b_cutout > 0 else max(0, ftb_a_cutout - current_income)
+        else:
+            # For couples, it's more complex - primary affects Part A, secondary affects Part B
+            primary_capacity = max(0, ftb_a_cutout - current_income) if ftb_a_cutout > 0 else 0
+            secondary_capacity = max(0, self.rates.ftb_b_income_free_area - secondary_income) if ftb_b_cutout > 0 else 0
+            
+            # Report the more restrictive constraint
+            if primary_capacity > 0 and secondary_capacity > 0:
+                additional_income_capacity = min(primary_capacity, secondary_capacity)
+            else:
+                additional_income_capacity = max(primary_capacity, secondary_capacity)
         
         return {
             "ftb_a_cutout": ftb_a_cutout,
             "ftb_b_cutout": ftb_b_cutout,
-            "earliest_cutout": earliest_cutout,
+            "earliest_cutout": min(x for x in [ftb_a_cutout, ftb_b_cutout] if x > 0) if any([ftb_a_cutout, ftb_b_cutout]) else 0,
             "additional_annual_income": additional_income_capacity,
-            "additional_weekly_income": additional_income_capacity / 52
+            "additional_weekly_income": additional_income_capacity / 52,
+            "family_type": family_type,
+            "secondary_income": secondary_income
         }
 
 def main():
@@ -364,7 +403,15 @@ def calculator_page():
     with col1:
         st.subheader("Family Information")
         family_type = st.selectbox("Family Type:", ["couple", "single"], format_func=lambda x: "Couple" if x == "couple" else "Single Parent")
-        annual_income = st.number_input("Annual Family Income ($):", min_value=0.0, value=50000.0, step=1000.0)
+        
+        if family_type == "couple":
+            st.info("💡 **For couples:** Enter the higher earner's income as 'Primary' and lower earner as 'Secondary'")
+            annual_income = st.number_input("Primary Earner Annual Income ($):", min_value=0.0, value=50000.0, step=1000.0, help="Higher earning partner's income")
+            secondary_income = st.number_input("Secondary Earner Annual Income ($):", min_value=0.0, value=15000.0, step=1000.0, help="Lower earning partner's income - subject to FTB Part B income test")
+        else:
+            annual_income = st.number_input("Annual Family Income ($):", min_value=0.0, value=50000.0, step=1000.0)
+            secondary_income = 0.0
+        
         rent_assistance = st.number_input("Annual Rent Assistance ($):", min_value=0.0, value=0.0, step=100.0)
         income_support = st.checkbox("Family receives income support payment")
         
@@ -372,7 +419,8 @@ def calculator_page():
             st.info("📊 **Income Test Information:**\n"
                     f"• FTB Part A Income Free Area: ${st.session_state.rates.ftb_a_income_free_area:,}\n"
                     f"• FTB Part A Higher Income Free Area: ${st.session_state.rates.ftb_a_higher_income_free_area:,}\n"
-                    f"• FTB Part B Income Free Area: ${st.session_state.rates.ftb_b_income_free_area:,}")
+                    f"• FTB Part B Income Free Area (Secondary): ${st.session_state.rates.ftb_b_income_free_area:,}\n"
+                    f"• FTB Part B Primary Earner Limit: ${st.session_state.rates.ftb_b_primary_earner_limit:,}")
         except AttributeError as e:
             st.error(f"Error loading rates: {e}")
             st.session_state.rates = FTBRates()  # Reset to defaults
@@ -422,7 +470,7 @@ def calculator_page():
                 })
             
             # Calculate FTB Part B
-            ftb_b_result = calculator.calculate_ftb_part_b(children, family_type, annual_income)
+            ftb_b_result = calculator.calculate_ftb_part_b(children, family_type, annual_income, secondary_income)
             
             # Calculate totals
             total_ftb_a_fortnightly = sum(r['result'].fortnightly_rate for r in ftb_a_results)
@@ -443,12 +491,13 @@ def calculator_page():
             total_annual_with_supplements = total_annual + ftb_a_supplement + ftb_b_supplement
             
             # Calculate work incentive
-            work_incentive = calculator.calculate_work_incentive(children, family_type, annual_income)
+            work_incentive = calculator.calculate_work_incentive(children, family_type, annual_income, secondary_income)
             
             # Store results in session state
             st.session_state.calculation_results = {
                 'family_type': family_type,
                 'annual_income': annual_income,
+                'secondary_income': secondary_income,
                 'rent_assistance': rent_assistance,
                 'income_support': income_support,
                 'children': children,
@@ -582,10 +631,12 @@ def charts_page():
         # Show default charts
         children = [Child(age=5)]
         family_type = "single"
+        secondary_income = 0
     else:
         results = st.session_state.calculation_results
         children = results['children']
         family_type = results['family_type']
+        secondary_income = results.get('secondary_income', 0)
     
     calculator = FTBCalculator(st.session_state.rates)
     
@@ -637,7 +688,12 @@ def charts_page():
     ftb_b_rates = []
     
     for income in income_range_b:
-        result = calculator.calculate_ftb_part_b(children, family_type, income)
+        if family_type == "couple":
+            # For couples, vary the secondary income while keeping primary income constant
+            result = calculator.calculate_ftb_part_b(children, family_type, 50000, income)  # Assume $50k primary
+        else:
+            # For singles, vary the family income
+            result = calculator.calculate_ftb_part_b(children, family_type, income, 0)
         ftb_b_rates.append(result.fortnightly_rate)
     
     fig_b = go.Figure()
@@ -661,8 +717,8 @@ def charts_page():
                        annotation_text=f"Primary Earner Limit (${st.session_state.rates.ftb_b_primary_earner_limit:,.0f})")
     
     fig_b.update_layout(
-        title=f"FTB Part B Rate by Annual Income ({family_type.title()} Family)",
-        xaxis_title="Annual Income ($)",
+        title=f"FTB Part B Rate by {'Secondary Earner' if family_type == 'couple' else 'Family'} Income ({family_type.title()} Family)",
+        xaxis_title=f"Annual {'Secondary Earner' if family_type == 'couple' else 'Family'} Income ($)",
         yaxis_title="Fortnightly Rate ($)",
         hovermode='x unified',
         showlegend=True
