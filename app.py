@@ -121,27 +121,16 @@ def pf_to_annual(amount_pf: float) -> float:
     return round(amount_pf * 26, 2)
 
 
-def calc_ftb_a_child_pf(child: Child, fam_income: float, kids: int, on_is: bool) -> float:
+def calc_ftb_a_child_base_pf(child: Child) -> float:
+    """Calculate base FTB Part A rate for a child before income test."""
     ra = RATES_2025["ftb_a"]
-    # Core by age
+    # Core rate by age
     if child.age <= 12:
         core = ra["max_rate_pf"]["0_12"]
     elif child.age <= 15:
         core = ra["max_rate_pf"]["13_15"]
     else:
         core = ra["max_rate_pf"]["16_19_secondary"]
-
-    # Income test (skip if on income support)
-    if not on_is and fam_income > ra["lower_threshold"]:
-        excess = fam_income - ra["lower_threshold"]
-        if fam_income <= ra["higher_threshold"]:
-            reduction = excess * ra["primary_taper"]
-        else:
-            reduction = (
-                (ra["higher_threshold"] - ra["lower_threshold"]) * ra["primary_taper"] +
-                (fam_income - ra["higher_threshold"]) * ra["secondary_taper"]
-            )
-        core = max(core - reduction / kids, 0)
 
     # Compliance penalties (flat $34.44 pf each)
     if not child.immunised:
@@ -160,14 +149,42 @@ def calc_ftb_a(fam: Family) -> Dict[str, float]:
     if not fam.children:
         return {"pf": 0.0, "annual": 0.0, "supp": 0.0, "annual_total": 0.0}
     
-    kids = len(fam.children)
-    total_pf = sum(
-        calc_ftb_a_child_pf(ch, fam.primary_income + fam.secondary_income, kids, fam.receives_income_support)
-        for ch in fam.children
-    )
-    annual = pf_to_annual(total_pf)
-    supp = RATES_2025["ftb_a"]["supplement_annual"] if total_pf > 0 else 0.0
-    return {"pf": total_pf, "annual": annual, "supp": supp, "annual_total": annual + supp}
+    ra = RATES_2025["ftb_a"]
+    fam_income = fam.primary_income + fam.secondary_income
+    
+    # Calculate base rates for all children (before income test)
+    total_base_pf = sum(calc_ftb_a_child_base_pf(ch) for ch in fam.children)
+    
+    # Apply income test if not on income support and income exceeds threshold
+    if fam.receives_income_support or fam_income <= ra["lower_threshold"]:
+        # Maximum rate - no income test reduction
+        final_pf = total_base_pf
+    else:
+        # Calculate income test reduction
+        if fam_income <= ra["higher_threshold"]:
+            # Primary taper: 20c per dollar above lower threshold
+            excess = fam_income - ra["lower_threshold"]
+            annual_reduction = excess * ra["primary_taper"]
+        else:
+            # Primary + secondary taper
+            primary_excess = ra["higher_threshold"] - ra["lower_threshold"]
+            secondary_excess = fam_income - ra["higher_threshold"]
+            annual_reduction = (primary_excess * ra["primary_taper"] + 
+                              secondary_excess * ra["secondary_taper"])
+        
+        # Convert annual reduction to fortnightly
+        pf_reduction = annual_reduction / 26
+        
+        # Apply reduction but don't go below base rate for eligible children
+        base_rate_pf = ra["base_rate_pf"] * len([ch for ch in fam.children if ch.maintenance_action_ok])
+        final_pf = max(total_base_pf - pf_reduction, base_rate_pf, 0)
+    
+    annual = pf_to_annual(final_pf)
+    # Supplement only if income <= $80,000 and getting some FTB Part A
+    supp = (RATES_2025["ftb_a"]["supplement_annual"] * len(fam.children) 
+            if final_pf > 0 and fam_income <= 80_000 else 0.0)
+    
+    return {"pf": final_pf, "annual": annual, "supp": supp, "annual_total": annual + supp}
 
 
 def calc_ftb_b(fam: Family) -> Dict[str, float]:
@@ -255,13 +272,14 @@ if st.button("Calculate FTB"):
     if part_a['pf'] > 0:
         with st.expander("Part A breakdown by child"):
             for i, child in enumerate(children):
-                child_rate = calc_ftb_a_child_pf(
-                    child, 
-                    fam.primary_income + fam.secondary_income, 
-                    len(children), 
-                    fam.receives_income_support
-                )
-                st.write(f"**Child {i+1} (age {child.age}):** ${child_rate:.2f} per fortnight")
+                child_base_rate = calc_ftb_a_child_base_pf(child)
+                st.write(f"**Child {i+1} (age {child.age}):** ${child_base_rate:.2f} base rate per fortnight")
+            
+            # Show income test impact
+            fam_income = fam.primary_income + fam.secondary_income
+            if fam_income > RATES_2025["ftb_a"]["lower_threshold"] and not fam.receives_income_support:
+                st.write(f"**Family income:** ${fam_income:,.0f} (above ${RATES_2025['ftb_a']['lower_threshold']:,.0f} threshold)")
+                st.write("**Income test applied:** Rate reduced from base amounts above")
 
 ###############################################################################
 # FOOTER
