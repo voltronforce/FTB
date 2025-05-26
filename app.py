@@ -164,7 +164,9 @@ def calc_ftb_part_a(fam: Family):
             payable_pf = base_after_30
 
     annual_core = pf_to_annual(payable_pf)
-    supplement = rates["supplement"] if payable_pf > 0 else 0.0
+    # End‑of‑year supplement only if family ATI ≤ $80 000 OR receiving income support
+    fam_ati = fam.primary_income + fam.secondary_income
+    supplement = rates["supplement"] if (payable_pf > 0 and (fam.on_income_support or fam_ati <= 80_000)) else 0.0
 
     return {
         "pf": round(payable_pf, 2),
