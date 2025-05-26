@@ -145,14 +145,14 @@ def child_penalties_pf(child: Child) -> float:
 # CALCULATE FTB PART A (Fixed calculation logic)
 ###############################################################################
 
-def calc_ftb_part_a(fam: Family):
-    """Calculate FTB Part A payment"""
+def calc_ftb_part_a_method_1(fam: Family):
+    """Calculate FTB Part A using Method 1 (higher maximum rates)"""
     rates = RATES["ftb_a"]
     
     # Step 1: Calculate per-child entitlements
     child_records = []
     for child in fam.children:
-        # Get base rates for this child
+        # Method 1 uses higher maximum rates
         max_rate_pf = child_max_rate_pf(child)
         base_rate_pf = child_base_rate_pf(child)
         
@@ -171,13 +171,11 @@ def calc_ftb_part_a(fam: Family):
             'age': child.age
         })
 
-    # Step 2: Calculate total family rates
     total_max_pf = sum(record['max_rate'] for record in child_records)
     total_base_pf = sum(record['base_rate'] for record in child_records)
-
-    # Step 3: Apply income test
+    
+    # Step 2: Apply Method 1 income test
     if fam.on_income_support:
-        # Full maximum rate for income support recipients
         payable_pf = total_max_pf
     else:
         total_income = fam.primary_income + fam.secondary_income
@@ -186,20 +184,90 @@ def calc_ftb_part_a(fam: Family):
             # Below lower threshold - full maximum rate
             payable_pf = total_max_pf
         elif total_income <= rates["higher_ifa"]:
-            # Between thresholds - 20c taper down to base rate
+            # Between thresholds - 20c taper down to base rate floor
             excess = total_income - rates["lower_ifa"]
             reduction = excess * rates["taper1"]
             payable_pf = max(total_max_pf - reduction, total_base_pf)
         else:
-            # Above higher threshold - base rate with 30c taper
+            # Above higher threshold - 30c taper from base rate
             excess_above_higher = total_income - rates["higher_ifa"]
             base_reduction = excess_above_higher * rates["taper2"]
             payable_pf = max(total_base_pf - base_reduction, 0)
 
-    # Step 4: Calculate annual amounts
+    return {
+        "payable_pf": payable_pf,
+        "total_max_pf": total_max_pf,
+        "total_base_pf": total_base_pf,
+        "method": "Method 1"
+    }
+
+
+def calc_ftb_part_a_method_2(fam: Family):
+    """Calculate FTB Part A using Method 2 (base rates only)"""
+    rates = RATES["ftb_a"]
+    
+    # Step 1: Calculate per-child entitlements using base rates only
+    child_records = []
+    for child in fam.children:
+        # Method 2 maximum rate = Method 1 base rate
+        base_rate_pf = child_base_rate_pf(child)
+        
+        # Apply maintenance action test (not applicable for Method 2)
+        # Apply compliance penalties
+        penalty_pf = child_penalties_pf(child)
+        base_rate_pf = max(base_rate_pf - penalty_pf, 0)
+        
+        child_records.append({
+            'max_rate': base_rate_pf,  # Method 2 max = Method 1 base
+            'base_rate': base_rate_pf,
+            'age': child.age
+        })
+
+    total_max_pf = sum(record['max_rate'] for record in child_records)
+    
+    # Step 2: Apply Method 2 income test (30c taper from higher income free area)
+    if fam.on_income_support:
+        payable_pf = total_max_pf
+    else:
+        total_income = fam.primary_income + fam.secondary_income
+        
+        if total_income <= rates["higher_ifa"]:
+            # Below higher threshold - full Method 2 maximum rate
+            payable_pf = total_max_pf
+        else:
+            # Above higher threshold - 30c taper from Method 2 maximum
+            excess_above_higher = total_income - rates["higher_ifa"]
+            reduction = excess_above_higher * rates["taper2"]
+            payable_pf = max(total_max_pf - reduction, 0)
+
+    return {
+        "payable_pf": payable_pf,
+        "total_max_pf": total_max_pf,
+        "total_base_pf": total_max_pf,  # Same for Method 2
+        "method": "Method 2"
+    }
+
+
+def calc_ftb_part_a(fam: Family):
+    """Calculate FTB Part A using both methods and return the higher rate"""
+    rates = RATES["ftb_a"]
+    
+    # Calculate using both methods
+    method_1_result = calc_ftb_part_a_method_1(fam)
+    method_2_result = calc_ftb_part_a_method_2(fam)
+    
+    # Choose the higher of the two methods
+    if method_1_result["payable_pf"] >= method_2_result["payable_pf"]:
+        chosen_result = method_1_result
+        payable_pf = method_1_result["payable_pf"]
+    else:
+        chosen_result = method_2_result  
+        payable_pf = method_2_result["payable_pf"]
+
+    # Calculate annual amounts
     annual_core = pf_to_annual(payable_pf)
     
-    # Step 5: Determine supplement eligibility
+    # Determine supplement eligibility
     family_ati = fam.primary_income + fam.secondary_income
     supplement_eligible = (
         payable_pf > 0 and 
@@ -213,10 +281,12 @@ def calc_ftb_part_a(fam: Family):
         "supp": supplement,
         "annual_total": round(annual_core + supplement, 2),
         "debug": {
-            "total_max_pf": total_max_pf,
-            "total_base_pf": total_base_pf,
+            "method_used": chosen_result["method"],
+            "method_1_pf": round(method_1_result["payable_pf"], 2),
+            "method_2_pf": round(method_2_result["payable_pf"], 2),
             "total_income": fam.primary_income + fam.secondary_income,
-            "child_records": child_records
+            "lower_ifa": rates["lower_ifa"],
+            "higher_ifa": rates["higher_ifa"]
         }
     }
 
@@ -344,14 +414,51 @@ if st.checkbox("Show calculation details"):
     st.write(f"- Lower income threshold: ${RATES['ftb_a']['lower_ifa']:,.2f}")
     st.write(f"- Higher income threshold: ${RATES['ftb_a']['higher_ifa']:,.2f}")
     
-    if a['debug']['child_records']:
-        st.write("**Per-child rates (fortnightly):**")
-        for i, record in enumerate(a['debug']['child_records']):
-            st.write(f"  - Child {i+1} (age {record['age']}): Max ${record['max_rate']:.2f}, Base ${record['base_rate']:.2f}")
+    if 'debug' in a:
+        st.write(f"- **Method used: {a['debug']['method_used']}**")
+        st.write(f"- Method 1 would pay: ${a['debug']['method_1_pf']:.2f} per fortnight")
+        st.write(f"- Method 2 would pay: ${a['debug']['method_2_pf']:.2f} per fortnight")
+        st.write(f"- Higher rate selected: ${a['pf']:.2f} per fortnight")
+        
+        # Explain which method applies
+        if total_income <= RATES['ftb_a']['higher_ifa']:
+            st.info("💡 **Income below higher threshold:** Both methods calculated, higher rate selected")
+        else:
+            st.info("💡 **Income above higher threshold:** Method 2 automatically applies, but compared with adjusted Method 1")
     
-    st.write(f"- Total maximum rate: ${a['debug']['total_max_pf']:.2f}")
-    st.write(f"- Total base rate: ${a['debug']['total_base_pf']:.2f}")
-    st.write(f"- Payable rate after income test: ${a['pf']:.2f}")
+    st.write("**FTB Part B Details:**")
+    if fam.partnered:
+        st.write(f"- Primary earner income: ${fam.primary_income:,.2f}")
+        st.write(f"- Secondary earner income: ${fam.secondary_income:,.2f}")
+        st.write(f"- Secondary earner free area: ${RATES['ftb_b']['secondary_free_area']:,.2f}")
+        st.write(f"- Primary earner limit: ${RATES['ftb_b']['primary_limit']:,.2f}")
+    else:
+        st.write("- Single parent: Full rate applies (no income test)")
+
+# Add method explanation
+st.markdown("---")
+with st.expander("ℹ️ How FTB Part A is calculated"):
+    st.markdown("""
+    **FTB Part A uses two calculation methods:**
+    
+    **Method 1 (Higher rates):**
+    - Uses higher maximum rates for each child
+    - Income test: 20¢ taper from lower threshold, then 30¢ taper above higher threshold  
+    - Cannot go below base rate
+    - Includes maintenance income test
+    
+    **Method 2 (Base rates):**
+    - Maximum rate equals Method 1 base rate
+    - Income test: 30¢ taper from higher income threshold only
+    - No maintenance income test
+    
+    **The system calculates both methods and pays whichever is higher.**
+    
+    For families with income above the higher threshold ($115,997), the system:
+    1. Calculates Method 2 rate
+    2. Calculates adjusted Method 1 rate (with 30¢ taper above higher threshold)
+    3. Pays the higher of the two
+    """)
 
 # Add information about the calculator
 st.markdown("---")
