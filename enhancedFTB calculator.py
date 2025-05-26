@@ -1,4 +1,3 @@
-
 ###############################################################################
 # Streamlit Setup - MUST BE FIRST
 ###############################################################################
@@ -56,41 +55,51 @@ st.markdown(f"""
         background-color: #fafbfc;
     }}
     
-    .main .block-container {{ padding-top: 1rem; }}
+    .main .block-container {{ 
+        padding-top: 1rem; 
+        max-width: 1200px;
+    }}
     
     h1, h2, h3 {{ 
         color: var(--primary); 
         font-weight: 600;
         letter-spacing: -0.025em;
+        margin-bottom: 1rem;
     }}
     
+    /* Enhanced Button Styling */
     .stButton>button {{ 
         background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
         color: #fff; 
         border: none; 
-        border-radius: 12px;
+        border-radius: 8px;
         font-weight: 500;
-        padding: 0.75rem 2rem;
-        transition: all 0.3s ease;
-        box-shadow: 0 4px 15px rgba(0,85,139,0.2);
+        padding: 0.6rem 1.5rem;
+        transition: all 0.2s ease;
+        box-shadow: 0 2px 8px rgba(0,85,139,0.15);
+        font-size: 0.95rem;
+        min-height: 44px;
     }}
     
     .stButton>button:hover {{ 
-        transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(0,85,139,0.3);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0,85,139,0.25);
+        background: linear-gradient(135deg, #003d5c 0%, #007580 100%);
     }}
 
-    /* ---------- Enhanced Banner styles ---------- */
+    .stButton>button:active {{
+        transform: translateY(0);
+        box-shadow: 0 2px 6px rgba(0,85,139,0.2);
+    }}
+
+    /* Clean Banner Design */
     .hero-banner {{
-        background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 50%, var(--accent) 100%);
+        background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
         color: #fff;
-        padding: 2.5rem 2rem;
-        border-radius: 20px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        padding: 2rem;
+        border-radius: 12px;
         text-align: center;
-        box-shadow: 0 10px 30px rgba(0,0,0,.15);
+        box-shadow: 0 4px 20px rgba(0,0,0,.1);
         margin-bottom: 2rem;
         position: relative;
         overflow: hidden;
@@ -103,7 +112,8 @@ st.markdown(f"""
         left: 0;
         right: 0;
         bottom: 0;
-        background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grain" width="100" height="100" patternUnits="userSpaceOnUse"><circle cx="25" cy="25" r="1" fill="white" opacity="0.1"/><circle cx="75" cy="75" r="1" fill="white" opacity="0.1"/><circle cx="50" cy="10" r="0.5" fill="white" opacity="0.1"/><circle cx="10" cy="60" r="0.5" fill="white" opacity="0.1"/><circle cx="90" cy="40" r="0.5" fill="white" opacity="0.1"/></pattern></defs><rect width="100" height="100" fill="url(%23grain)"/></svg>');
+        background: radial-gradient(circle at 30% 20%, rgba(255,255,255,0.1) 0%, transparent 50%),
+                    radial-gradient(circle at 70% 80%, rgba(255,255,255,0.08) 0%, transparent 50%);
         pointer-events: none;
     }}
     
@@ -113,120 +123,162 @@ st.markdown(f"""
     }}
     
     .hero-banner .logo {{ 
-        font-size: 5rem; 
-        margin-bottom: 1rem;
-        filter: drop-shadow(0 4px 8px rgba(0,0,0,0.2));
+        font-size: 3rem; 
+        margin-bottom: 0.5rem;
+        filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
     }}
     
     .hero-banner .title {{ 
-        font-size: 3rem; 
+        font-size: 2.2rem; 
         font-weight: 700; 
-        margin-bottom: 0.5rem;
-        text-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        line-height: 1.1;
+        margin-bottom: 0.3rem;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        line-height: 1.2;
     }}
     
     .hero-banner .subtitle {{
-        font-size: 1.2rem;
+        font-size: 1rem;
         opacity: 0.9;
-        font-weight: 300;
-        letter-spacing: 0.5px;
+        font-weight: 400;
+        letter-spacing: 0.3px;
     }}
 
-    /* Enhanced Tabs styling */
+    /* Clean Tab Styling */
     .stTabs [role="tab"] {{ 
-        padding: 12px 28px; 
-        font-weight: 600;
-        font-size: 1rem;
-        background: white;
-        border-radius: 12px 12px 0 0;
-        margin-right: 4px;
-        transition: all 0.3s ease;
+        padding: 12px 20px; 
+        font-weight: 500;
+        font-size: 0.95rem;
+        background: #fff;
+        border-radius: 8px 8px 0 0;
+        margin-right: 2px;
+        transition: all 0.2s ease;
+        border: 1px solid #e9ecef;
+        color: #6c757d;
     }}
     
     .stTabs [aria-selected="true"] {{ 
         color: var(--primary);
-        background: linear-gradient(135deg, #fff 0%, #f8f9fa 100%);
-        box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+        background: #fff;
+        border-bottom: 2px solid var(--primary);
+        border-top: 2px solid var(--primary);
+        font-weight: 600;
     }}
     
     .stTabs [role="tab"]:hover {{
         background: #f8f9fa;
+        color: var(--primary);
     }}
     
-    /* Card styling */
+    /* Card Styling */
     .calc-card {{
-        background: white;
-        padding: 2rem;
-        border-radius: 16px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+        background: #fff;
+        padding: 1.5rem;
+        border-radius: 12px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.06);
         margin-bottom: 1.5rem;
         border: 1px solid #e9ecef;
     }}
     
     .result-card {{
-        background: linear-gradient(135deg, var(--success) 0%, #34ce57 100%);
+        background: linear-gradient(135deg, var(--success) 0%, #20c653 100%);
         color: white;
-        padding: 2rem;
-        border-radius: 16px;
-        box-shadow: 0 6px 25px rgba(40,167,69,0.2);
+        padding: 1.5rem;
+        border-radius: 12px;
+        box-shadow: 0 4px 16px rgba(40,167,69,0.15);
         margin: 1rem 0;
     }}
     
     .info-card {{
-        background: linear-gradient(135deg, var(--secondary) 0%, #6ba3f5 100%);
-        color: white;
-        padding: 1.5rem;
-        border-radius: 12px;
+        background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+        color: var(--primary);
+        padding: 1.2rem;
+        border-radius: 10px;
         margin: 1rem 0;
+        border-left: 4px solid var(--secondary);
     }}
     
     .warning-card {{
-        background: linear-gradient(135deg, var(--warning) 0%, #ffd93d 100%);
-        color: #333;
-        padding: 1.5rem;
-        border-radius: 12px;
+        background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+        color: #856404;
+        padding: 1.2rem;
+        border-radius: 10px;
         margin: 1rem 0;
+        border-left: 4px solid var(--warning);
     }}
     
-    /* Number input styling */
+    /* Form Input Styling */
     .stNumberInput > div > div > input {{
-        border-radius: 8px;
-        border: 2px solid #e9ecef;
-        transition: border-color 0.3s ease;
+        border-radius: 6px;
+        border: 1px solid #ced4da;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        padding: 0.5rem 0.75rem;
     }}
     
     .stNumberInput > div > div > input:focus {{
         border-color: var(--primary);
-        box-shadow: 0 0 0 3px rgba(0,85,139,0.1);
+        box-shadow: 0 0 0 2px rgba(0,85,139,0.1);
+        outline: none;
     }}
     
-    /* Selectbox styling */
     .stSelectbox > div > div {{
-        border-radius: 8px;
+        border-radius: 6px;
     }}
     
-    /* Metric styling */
+    .stCheckbox > label {{
+        font-size: 0.9rem;
+        color: #495057;
+    }}
+    
+    /* Metric Styling */
     .metric-container {{
-        background: white;
-        padding: 1.5rem;
-        border-radius: 12px;
+        background: #fff;
+        padding: 1.2rem;
+        border-radius: 10px;
         text-align: center;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-        border-left: 4px solid var(--accent);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        border-left: 3px solid var(--accent);
+    }}
+
+    /* Expander Styling */
+    .streamlit-expanderHeader {{
+        font-weight: 500;
+        color: var(--primary);
+    }}
+
+    /* Clean up spacing */
+    .element-container {{
+        margin-bottom: 0.8rem;
+    }}
+
+    /* Improve readability */
+    .stMarkdown p {{
+        margin-bottom: 0.8rem;
+        line-height: 1.6;
+    }}
+
+    /* Better section headers */
+    .section-header {{
+        background: linear-gradient(90deg, var(--primary) 0%, var(--accent) 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        font-weight: 600;
+        font-size: 1.1rem;
+        margin-bottom: 1rem;
+        display: block;
     }}
 </style>
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------------------------
-# Enhanced DSS Banner - Let's make it even more prominent
+# Clean DSS Banner with Beetle Icon
 # ---------------------------------------------------------------------------
 st.markdown("""
 <div class='hero-banner'>
     <div class='hero-content'>
-        <div class='logo'>🏛️💰</div>
-        <div class='title'>Enhanced FTB Calculator</div>
-        <div class='subtitle'>2024‑25 • Department of Social Services • ENHANCED VERSION</div>
+        <div class='logo'>🐞</div>
+        <div class='title'>Family Tax Benefit Calculator</div>
+        <div class='subtitle'>2024‑25 • Department of Social Services</div>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -421,33 +473,33 @@ def find_ftb_b_cutoff(family_structure: Dict) -> Dict:
 def render_child_input_section():
     """Render the child input section with enhanced styling"""
     st.markdown('<div class="calc-card">', unsafe_allow_html=True)
-    st.subheader("👶 Children Details")
+    st.markdown('<div class="section-header">👶 Children Details</div>', unsafe_allow_html=True)
     
     if 'children_data' not in st.session_state:
         st.session_state.children_data = []
     
-    col1, col2 = st.columns([3, 1])
+    col1, col2 = st.columns([2, 1])
     with col1:
         num_children = st.number_input("Number of children", min_value=0, max_value=10, value=len(st.session_state.children_data))
     with col2:
-        if st.button("Update Children", type="primary"):
+        st.write("")  # Add some spacing
+        if st.button("Update Children Count"):
             st.session_state.children_data = [{"age": 5, "immunised": True, "healthy_start": True, "maintenance_ok": True} for _ in range(num_children)]
+            st.rerun()
     
     children = []
     for i in range(num_children):
         if i >= len(st.session_state.children_data):
             st.session_state.children_data.append({"age": 5, "immunised": True, "healthy_start": True, "maintenance_ok": True})
         
-        with st.expander(f"Child {i+1}", expanded=True):
-            col1, col2, col3, col4 = st.columns(4)
+        with st.expander(f"Child {i+1} Details", expanded=i < 2):  # Only expand first 2 by default
+            col1, col2 = st.columns(2)
             with col1:
                 age = st.number_input(f"Age", min_value=0, max_value=19, value=st.session_state.children_data[i]["age"], key=f"age_{i}")
-            with col2:
                 immunised = st.checkbox("Immunised", value=st.session_state.children_data[i]["immunised"], key=f"immunised_{i}")
-            with col3:
-                healthy_start = st.checkbox("Healthy Start", value=st.session_state.children_data[i]["healthy_start"], key=f"healthy_start_{i}")
-            with col4:
-                maintenance_ok = st.checkbox("Maintenance OK", value=st.session_state.children_data[i]["maintenance_ok"], key=f"maintenance_ok_{i}")
+            with col2:
+                healthy_start = st.checkbox("Healthy Start Check (4-5 years)", value=st.session_state.children_data[i]["healthy_start"], key=f"healthy_start_{i}")
+                maintenance_ok = st.checkbox("Maintenance Action Met", value=st.session_state.children_data[i]["maintenance_ok"], key=f"maintenance_ok_{i}")
             
             st.session_state.children_data[i] = {
                 "age": age, "immunised": immunised, 
@@ -461,25 +513,25 @@ def render_child_input_section():
 def display_results(ftb_a_result: Dict, ftb_b_result: Dict):
     """Display calculation results with enhanced styling"""
     st.markdown('<div class="result-card">', unsafe_allow_html=True)
-    st.subheader("💰 Calculation Results")
+    st.markdown("### 💰 Your FTB Payment Summary")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("### FTB Part A")
+        st.markdown("**FTB Part A**")
         st.metric("Fortnightly Payment", f"${ftb_a_result['pf']:.2f}")
-        st.metric("Annual Core Payment", f"${ftb_a_result['annual']:.2f}")
-        st.metric("Annual Supplement", f"${ftb_a_result['supp']:.2f}")
-        st.metric("**Total Annual FTB A**", f"**${ftb_a_result['annual_total']:.2f}**")
+        st.metric("Annual Core Payment", f"${ftb_a_result['annual']:,.2f}")
+        st.metric("Annual Supplement", f"${ftb_a_result['supp']:,.2f}")
+        st.metric("**Total Annual FTB A**", f"**${ftb_a_result['annual_total']:,.2f}**")
     
     with col2:
-        st.markdown("### FTB Part B")
+        st.markdown("**FTB Part B**")
         st.metric("Fortnightly Payment", f"${ftb_b_result['pf']:.2f}")
-        st.metric("Annual Core Payment", f"${ftb_b_result['annual']:.2f}")
-        st.metric("Annual Supplement", f"${ftb_b_result['supp']:.2f}")
+        st.metric("Annual Core Payment", f"${ftb_b_result['annual']:,.2f}")
+        st.metric("Annual Supplement", f"${ftb_b_result['supp']:,.2f}")
         if ftb_b_result.get('energy', 0) > 0:
-            st.metric("Energy Supplement", f"${ftb_b_result['energy']:.2f}")
-        st.metric("**Total Annual FTB B**", f"**${ftb_b_result['annual_total']:.2f}**")
+            st.metric("Energy Supplement", f"${ftb_b_result['energy']:,.2f}")
+        st.metric("**Total Annual FTB B**", f"**${ftb_b_result['annual_total']:,.2f}**")
     
     # Combined totals
     total_fortnightly = ftb_a_result['pf'] + ftb_b_result['pf']
@@ -490,7 +542,7 @@ def display_results(ftb_a_result: Dict, ftb_b_result: Dict):
     with col1:
         st.metric("**Combined Fortnightly**", f"**${total_fortnightly:.2f}**")
     with col2:
-        st.metric("**Combined Annual Total**", f"**${total_annual:.2f}**")
+        st.metric("**Combined Annual Total**", f"**${total_annual:,.2f}**")
     
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -498,13 +550,13 @@ def display_results(ftb_a_result: Dict, ftb_b_result: Dict):
 # Main Application with Enhanced Tabs
 ###############################################################################
 
-# Create enhanced tab layout
+# Create clean tab layout
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "🧮 Calculator", 
-    "🔄 Reverse Calculator", 
-    "📊 Income Buffer Analysis", 
-    "📋 Eligibility Thresholds",
-    "📖 Rate Details"
+    "🔄 Income Limits", 
+    "📊 Payment Analysis", 
+    "📋 Eligibility Guide",
+    "📖 Rate Information"
 ])
 
 with tab1:
@@ -512,94 +564,109 @@ with tab1:
     
     # Family structure inputs
     st.markdown('<div class="calc-card">', unsafe_allow_html=True)
-    st.subheader("👥 Family Structure")
+    st.markdown('<div class="section-header">👥 Family Structure</div>', unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
     with col1:
-        partnered = st.selectbox("Family Type", ["Single", "Partnered/Couple"]) == "Partnered/Couple"
-        primary_income = st.number_input("Primary Income (annual $)", min_value=0.0, value=50000.0, step=1000.0)
+        partnered = st.selectbox("Family Type", ["Single Parent", "Couple/Partnered"], index=0) == "Couple/Partnered"
+        primary_income = st.number_input("Primary Income (annual)", min_value=0.0, value=50000.0, step=1000.0, format="%.0f")
     with col2:
-        on_income_support = st.checkbox("Receiving Income Support")
-        secondary_income = st.number_input("Secondary Income (annual $)", min_value=0.0, value=0.0, step=1000.0) if partnered else 0.0
+        on_income_support = st.checkbox("Currently receiving income support payments")
+        if partnered:
+            secondary_income = st.number_input("Partner's Income (annual)", min_value=0.0, value=0.0, step=1000.0, format="%.0f")
+        else:
+            secondary_income = 0.0
     
     st.markdown('</div>', unsafe_allow_html=True)
     
     # Children input
     children = render_child_input_section()
     
-    if st.button("Calculate FTB Payments", type="primary"):
-        if children:
-            family = Family(partnered, primary_income, secondary_income, children, on_income_support)
-            
-            ftb_a_result = calc_ftb_part_a(family)
-            ftb_b_result = calc_ftb_part_b(family, include_es=True)
-            
-            display_results(ftb_a_result, ftb_b_result)
-        else:
-            st.warning("Please add at least one child to calculate FTB payments.")
+    # Calculate button
+    st.markdown("---")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if st.button("Calculate My FTB Payments", type="primary", use_container_width=True):
+            if children:
+                family = Family(partnered, primary_income, secondary_income, children, on_income_support)
+                
+                ftb_a_result = calc_ftb_part_a(family)
+                ftb_b_result = calc_ftb_part_b(family, include_es=True)
+                
+                display_results(ftb_a_result, ftb_b_result)
+            else:
+                st.error("⚠️ Please add at least one child to calculate FTB payments.")
 
 with tab2:
-    st.markdown("### Find Income Limits for Your Family")
+    st.markdown("### Find Income Thresholds for Your Family")
     st.markdown('<div class="info-card">', unsafe_allow_html=True)
-    st.markdown("**Reverse Calculator**: Enter your family structure to find the income thresholds where FTB payments reduce or cease.")
+    st.markdown("**Income Limit Calculator**: Discover the income levels where your FTB payments begin to reduce or stop entirely.")
     st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown('<div class="calc-card">', unsafe_allow_html=True)
-    st.subheader("👥 Family Structure for Analysis")
+    st.markdown('<div class="section-header">👥 Family Structure</div>', unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
     with col1:
-        reverse_partnered = st.selectbox("Family Type", ["Single", "Partnered/Couple"], key="reverse_family") == "Partnered/Couple"
+        reverse_partnered = st.selectbox("Family Type", ["Single Parent", "Couple/Partnered"], key="reverse_family", index=0) == "Couple/Partnered"
         reverse_num_children = st.number_input("Number of children", min_value=1, max_value=10, value=2, key="reverse_children")
     
     with col2:
         st.markdown("**Child Ages:**")
         reverse_child_ages = []
-        for i in range(reverse_num_children):
-            age = st.number_input(f"Child {i+1} age", min_value=0, max_value=19, value=5, key=f"reverse_age_{i}")
+        for i in range(min(reverse_num_children, 4)):  # Limit display for cleaner UI
+            age = st.number_input(f"Child {i+1} age", min_value=0, max_value=19, value=5+i*2, key=f"reverse_age_{i}")
             reverse_child_ages.append(age)
+        
+        # Add remaining children with default ages if more than 4
+        for i in range(4, reverse_num_children):
+            reverse_child_ages.append(5 + i*2)
     
     st.markdown('</div>', unsafe_allow_html=True)
     
-    if st.button("Calculate Income Limits", type="primary"):
+    if st.button("Calculate Income Thresholds", type="primary"):
         family_structure = {"child_ages": reverse_child_ages, "partnered": reverse_partnered}
         
         ftb_a_limits = find_ftb_a_cutoff(family_structure)
         ftb_b_limits = find_ftb_b_cutoff(family_structure)
         
         st.markdown('<div class="result-card">', unsafe_allow_html=True)
-        st.subheader("💡 Income Limit Analysis")
+        st.markdown("### 💡 Income Threshold Analysis")
         
         col1, col2 = st.columns(2)
         
         with col1:
-            st.markdown("### FTB Part A Limits")
-            st.metric("Supplement Income Limit", f"${ftb_a_limits['supplement_cutoff']:,.0f}")
-            st.metric("Higher Taper Starts", f"${ftb_a_limits['taper_start']:,.0f}")
-            st.metric("Payment Ceases", f"${ftb_a_limits['zero_payment']:,.0f}")
+            st.markdown("**FTB Part A Thresholds**")
+            st.metric("Supplement Income Limit", f"${ftb_a_limits['supplement_cutoff']:,}")
+            st.metric("Higher Taper Begins", f"${ftb_a_limits['taper_start']:,}")
+            st.metric("Payment Stops", f"${ftb_a_limits['zero_payment']:,}")
         
         with col2:
-            st.markdown("### FTB Part B Limits")
-            st.metric("Primary Income Limit", f"${ftb_b_limits['primary_limit']:,.0f}")
-            st.metric("Secondary Free Area", f"${ftb_b_limits['secondary_free_area']:,.0f}")
-            st.metric("Secondary Income Cutoff", f"${ftb_b_limits['secondary_cutoff']:,.0f}")
+            st.markdown("**FTB Part B Thresholds**")
+            st.metric("Primary Income Limit", f"${ftb_b_limits['primary_limit']:,}")
+            st.metric("Secondary Free Area", f"${ftb_b_limits['secondary_free_area']:,}")
+            st.metric("Secondary Income Cutoff", f"${ftb_b_limits['secondary_cutoff']:,}")
         
         st.markdown('</div>', unsafe_allow_html=True)
 
 with tab3:
-    st.markdown("### Income Buffer Analysis")
+    st.markdown("### Payment vs Income Analysis")
     st.markdown('<div class="info-card">', unsafe_allow_html=True)
-    st.markdown("**Buffer Analysis**: See how small changes in income affect your FTB payments.")
+    st.markdown("**Payment Analysis**: Visualize how changes in income affect your FTB payments.")
     st.markdown('</div>', unsafe_allow_html=True)
     
-    # This would show a chart of how payments change with income
     st.markdown('<div class="calc-card">', unsafe_allow_html=True)
-    st.subheader("📈 Payment vs Income Chart")
+    st.markdown('<div class="section-header">📈 Analysis Parameters</div>', unsafe_allow_html=True)
     
-    buffer_income = st.number_input("Base Income for Analysis", value=80000.0, step=5000.0)
-    buffer_range = st.slider("Income Range (+/-)", 5000, 50000, 20000, step=5000)
+    col1, col2 = st.columns(2)
+    with col1:
+        buffer_income = st.number_input("Base Income for Analysis", value=80000.0, step=5000.0, format="%.0f")
+    with col2:
+        buffer_range = st.slider("Income Range (+/-)", 5000, 50000, 20000, step=5000)
     
-    if st.button("Generate Buffer Analysis", type="primary"):
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    if st.button("Generate Payment Analysis", type="primary"):
         # Generate sample data for visualization
         incomes = np.arange(buffer_income - buffer_range, buffer_income + buffer_range + 1, 1000)
         
@@ -627,7 +694,8 @@ with tab3:
             paper_bgcolor='rgba(0,0,0,0)',
             font=dict(family="Inter, Arial, sans-serif"),
             title_font_size=16,
-            showlegend=False
+            showlegend=False,
+            height=400
         )
         fig.update_traces(line_color=PRIMARY, line_width=3)
         fig.add_vline(x=buffer_income, line_dash="dash", line_color="red", 
@@ -648,76 +716,74 @@ with tab3:
         with col3:
             higher_payment = ftb_a_payments[min(len(ftb_a_payments)-1, current_idx + 5)]
             st.metric("$5K More Income", f"${higher_payment:,.0f}", f"{higher_payment - current_payment:,.0f}")
-    
-    st.markdown('</div>', unsafe_allow_html=True)
 
 with tab4:
-    st.markdown("### Eligibility Thresholds & Requirements")
+    st.markdown("### Eligibility Requirements & Thresholds")
     
     st.markdown('<div class="calc-card">', unsafe_allow_html=True)
-    st.subheader("📋 FTB Part A Thresholds (2024-25)")
+    st.markdown('<div class="section-header">📋 FTB Part A - 2024-25 Rates</div>', unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
     with col1:
         st.markdown("**Income Thresholds:**")
-        st.markdown(f"- Lower income free area: **${RATES['ftb_a']['lower_ifa']:,}**")
-        st.markdown(f"- Higher income free area: **${RATES['ftb_a']['higher_ifa']:,}**")
-        st.markdown(f"- Supplement income limit: **${RATES['ftb_a']['supplement_income_limit']:,}**")
+        st.markdown(f"• Lower income free area: **${RATES['ftb_a']['lower_ifa']:,}**")
+        st.markdown(f"• Higher income free area: **${RATES['ftb_a']['higher_ifa']:,}**")
+        st.markdown(f"• Supplement income limit: **${RATES['ftb_a']['supplement_income_limit']:,}**")
         
         st.markdown("**Taper Rates:**")
-        st.markdown(f"- First taper rate: **{RATES['ftb_a']['taper1']*100}%** per dollar")
-        st.markdown(f"- Second taper rate: **{RATES['ftb_a']['taper2']*100}%** per dollar")
+        st.markdown(f"• First taper rate: **{RATES['ftb_a']['taper1']*100:.0f}¢** per dollar")
+        st.markdown(f"• Second taper rate: **{RATES['ftb_a']['taper2']*100:.0f}¢** per dollar")
     
     with col2:
         st.markdown("**Maximum Fortnightly Rates:**")
-        st.markdown(f"- 0-12 years: **${RATES['ftb_a']['max_pf']['0_12']:.2f}**")
-        st.markdown(f"- 13-15 years: **${RATES['ftb_a']['max_pf']['13_15']:.2f}**")
-        st.markdown(f"- 16-19 years: **${RATES['ftb_a']['max_pf']['16_19']:.2f}**")
+        st.markdown(f"• Ages 0-12: **${RATES['ftb_a']['max_pf']['0_12']:.2f}**")
+        st.markdown(f"• Ages 13-15: **${RATES['ftb_a']['max_pf']['13_15']:.2f}**")
+        st.markdown(f"• Ages 16-19: **${RATES['ftb_a']['max_pf']['16_19']:.2f}**")
         
         st.markdown("**Base Fortnightly Rates:**")
-        st.markdown(f"- 0-12 years: **${RATES['ftb_a']['base_pf']['0_12']:.2f}**")
-        st.markdown(f"- 13+ years: **${RATES['ftb_a']['base_pf']['13_plus']:.2f}**")
+        st.markdown(f"• Ages 0-12: **${RATES['ftb_a']['base_pf']['0_12']:.2f}**")
+        st.markdown(f"• Ages 13+: **${RATES['ftb_a']['base_pf']['13_plus']:.2f}**")
     
     st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown('<div class="calc-card">', unsafe_allow_html=True)
-    st.subheader("📋 FTB Part B Thresholds (2024-25)")
+    st.markdown('<div class="section-header">📋 FTB Part B - 2024-25 Rates</div>', unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
     with col1:
         st.markdown("**Income Thresholds:**")
-        st.markdown(f"- Primary income limit: **${RATES['ftb_b']['primary_limit']:,}**")
-        st.markdown(f"- Secondary free area: **${RATES['ftb_b']['secondary_free_area']:,}**")
-        st.markdown(f"- Taper rate: **{RATES['ftb_b']['taper']*100}%** per dollar")
+        st.markdown(f"• Primary income limit: **${RATES['ftb_b']['primary_limit']:,}**")
+        st.markdown(f"• Secondary free area: **${RATES['ftb_b']['secondary_free_area']:,}**")
+        st.markdown(f"• Taper rate: **{RATES['ftb_b']['taper']*100:.0f}¢** per dollar")
         
-        st.markdown("**Nil Rate Thresholds:**")
-        st.markdown(f"- Under 5: **${RATES['ftb_b']['nil_secondary']['under_5']:,}**")
-        st.markdown(f"- 5-12 years: **${RATES['ftb_b']['nil_secondary']['5_to_12']:,}**")
+        st.markdown("**Payment Ceases When Secondary Income Reaches:**")
+        st.markdown(f"• Family with child under 5: **${RATES['ftb_b']['nil_secondary']['under_5']:,}**")
+        st.markdown(f"• Family with children 5-12: **${RATES['ftb_b']['nil_secondary']['5_to_12']:,}**")
     
     with col2:
         st.markdown("**Maximum Fortnightly Rates:**")
-        st.markdown(f"- Under 5: **${RATES['ftb_b']['max_pf']['under_5']:.2f}**")
-        st.markdown(f"- 5-18 years: **${RATES['ftb_b']['max_pf']['5_to_18']:.2f}**")
+        st.markdown(f"• Youngest child under 5: **${RATES['ftb_b']['max_pf']['under_5']:.2f}**")
+        st.markdown(f"• Youngest child 5-18: **${RATES['ftb_b']['max_pf']['5_to_18']:.2f}**")
         
         st.markdown("**Energy Supplement (fortnightly):**")
-        st.markdown(f"- Under 5: **${RATES['ftb_b']['energy_pf']['under_5']:.2f}**")
-        st.markdown(f"- 5-18 years: **${RATES['ftb_b']['energy_pf']['5_to_18']:.2f}**")
+        st.markdown(f"• Youngest child under 5: **${RATES['ftb_b']['energy_pf']['under_5']:.2f}**")
+        st.markdown(f"• Youngest child 5-18: **${RATES['ftb_b']['energy_pf']['5_to_18']:.2f}**")
     
     st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown('<div class="warning-card">', unsafe_allow_html=True)
-    st.markdown("### ⚠️ Compliance Requirements")
+    st.markdown('<div class="section-header">⚠️ Compliance Requirements</div>', unsafe_allow_html=True)
     st.markdown(f"**Penalty per child (fortnightly): ${RATES['compliance_penalty_pf']:.2f}**")
-    st.markdown("- Children must be immunised (or have approved exemption)")
-    st.markdown("- 4-5 year olds must complete healthy start checks")
-    st.markdown("- Maintenance action requirements must be met")
+    st.markdown("• **Immunisation**: Children must be fully immunised or have approved exemption")
+    st.markdown("• **Healthy Start**: 4-5 year olds must complete health check requirements")
+    st.markdown("• **Maintenance Action**: Appropriate maintenance action must be taken where required")
     st.markdown('</div>', unsafe_allow_html=True)
 
 with tab5:
-    st.markdown("### Rate Details & Calculation Methods")
+    st.markdown("### Rate Details & Calculation Information")
     
     st.markdown('<div class="calc-card">', unsafe_allow_html=True)
-    st.subheader("🔍 FTB Part A Calculation Methods")
+    st.markdown('<div class="section-header">🔍 How FTB Part A is Calculated</div>', unsafe_allow_html=True)
     
     st.markdown("""
     **Method 1 (Standard Calculation):**
@@ -734,13 +800,13 @@ with tab5:
     3. Apply 30¢ per dollar taper above $115,997
     4. Used when it gives a higher result than Method 1
     
-    **Final Payment = MAX(Method 1, Method 2)**
+    **Final Payment = Higher of Method 1 or Method 2**
     """)
     
     st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown('<div class="calc-card">', unsafe_allow_html=True)
-    st.subheader("🔍 FTB Part B Calculation")
+    st.markdown('<div class="section-header">🔍 How FTB Part B is Calculated</div>', unsafe_allow_html=True)
     
     st.markdown("""
     **Primary Income Test:**
@@ -760,42 +826,43 @@ with tab5:
     
     # Rate comparison table
     st.markdown('<div class="calc-card">', unsafe_allow_html=True)
-    st.subheader("📊 Rate Comparison Table")
+    st.markdown('<div class="section-header">📊 Rate Comparison Tables</div>', unsafe_allow_html=True)
     
     # Create comparison DataFrame
+    st.markdown("**FTB Part A Rates by Age Group:**")
     rate_data = {
         'Age Group': ['0-12 years', '13-15 years', '16-19 years'],
-        'FTB A Maximum ($/fortnight)': [222.04, 288.82, 288.82],
-        'FTB A Maximum ($/year)': [5773.04, 7509.32, 7509.32],
-        'FTB A Base ($/fortnight)': [71.26, 71.26, 71.26],
-        'FTB A Base ($/year)': [1852.76, 1852.76, 1852.76]
+        'Maximum ($/fortnight)': [222.04, 288.82, 288.82],
+        'Maximum ($/year)': [5773.04, 7509.32, 7509.32],
+        'Base ($/fortnight)': [71.26, 71.26, 71.26],
+        'Base ($/year)': [1852.76, 1852.76, 1852.76]
     }
     
     df_rates = pd.DataFrame(rate_data)
-    st.dataframe(df_rates, use_container_width=True)
+    st.dataframe(df_rates, use_container_width=True, hide_index=True)
     
-    # FTB B rates
+    st.markdown("**FTB Part B Rates by Age Group:**")
     ftb_b_data = {
-        'Age Group': ['Under 5', '5-18 years'],
-        'FTB B Maximum ($/fortnight)': [188.86, 131.74],
-        'FTB B Maximum ($/year)': [4910.36, 3425.24],
+        'Age Group': ['Youngest under 5', 'Youngest 5-18'],
+        'Standard ($/fortnight)': [188.86, 131.74],
+        'Standard ($/year)': [4910.36, 3425.24],
         'Energy Supplement ($/fortnight)': [2.80, 1.96],
         'Energy Supplement ($/year)': [72.80, 50.96]
     }
     
     df_ftb_b = pd.DataFrame(ftb_b_data)
-    st.dataframe(df_ftb_b, use_container_width=True)
+    st.dataframe(df_ftb_b, use_container_width=True, hide_index=True)
     
     st.markdown('</div>', unsafe_allow_html=True)
 
-# Footer
+# Clean Footer
 st.markdown("---")
 st.markdown("""
-<div style='text-align: center; color: #666; padding: 2rem;'>
-    <p><strong>Department of Social Services - Family Tax Benefit Calculator 2024-25</strong></p>
-    <p>This calculator provides estimates based on current rates and thresholds. 
-    Actual payments may vary based on individual circumstances and additional factors not captured in this tool.</p>
-    <p><em>For official advice, contact Services Australia or visit servicesaustralia.gov.au</em></p>
+<div style='text-align: center; color: #6c757d; padding: 1.5rem; background: #f8f9fa; border-radius: 8px; margin-top: 2rem;'>
+    <p style='margin-bottom: 0.5rem;'><strong>Department of Social Services - Family Tax Benefit Calculator 2024-25</strong></p>
+    <p style='font-size: 0.9rem; margin-bottom: 0.5rem;'>This calculator provides estimates based on current rates and thresholds. 
+    Actual payments may vary based on individual circumstances.</p>
+    <p style='font-size: 0.85rem; margin: 0;'><em>For official advice, contact Services Australia or visit servicesaustralia.gov.au</em></p>
 </div>
 """, unsafe_allow_html=True)
 
