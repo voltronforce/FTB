@@ -8,10 +8,10 @@ using 2024‑25 rates and the rules in the Family Assistance Guide (FAG 3.1.1�
 
 Visual refresh (May 2025)
 -------------------------
-* **Bold DSS banner** with gradient navy→teal background
-* Larger “Budget Beetle” icon (or DSS logo) inside the banner
-* Consistent sans‑serif typography
-* Retains original three‑tab layout & calculation logic – *no functional changes*
+* Bold DSS banner (gradient navy→teal) with larger logo / beetle icon
+* Sans‑serif typography and coloured tabs
+* Three‑tab layout — **Calculator • Income Buffer • Eligibility Thresholds**
+* Core calculation logic unchanged
 
 Run with:
     streamlit run ftb_streamlit_app_updated.py
@@ -26,78 +26,56 @@ import streamlit as st
 import os
 
 # ---------------------------------------------------------------------------
-# Page configuration & base CSS
+# Page configuration & CSS
 # ---------------------------------------------------------------------------
 PRIMARY = "#00558B"  # DSS navy
 ACCENT  = "#009CA6"  # DSS teal
 
-st.set_page_config(
-    page_title="DSS – Family Tax Benefit Calculator 2024‑25",
-    page_icon="🐞",
-    layout="wide",
-)
+st.set_page_config(page_title="DSS – Family Tax Benefit Calculator 2024‑25",
+                   page_icon="🐞", layout="wide")
 
-st.markdown(
-    f"""
-    <style>
-        :root {{ --primary: {PRIMARY}; --accent: {ACCENT}; }}
-        html, body, label, span, input, select {{ font-family: "Helvetica Neue", Arial, sans-serif; }}
-        h1, h2, h3 {{ color: var(--primary); }}
-        .stButton>button {{ background-color: var(--primary); color:#fff; border:none; }}
-        .stButton>button:hover {{ background-color: var(--accent); }}
+st.markdown(f"""
+<style>
+    :root {{ --primary: {PRIMARY}; --accent: {ACCENT}; }}
+    html, body, label, span, input, select {{ font-family: Arial, Helvetica, sans-serif; }}
+    h1, h2, h3 {{ color: var(--primary); }}
+    .stButton>button {{ background-color: var(--primary); color:#fff; border:none; }}
+    .stButton>button:hover {{ background-color: var(--accent); }}
 
-        /* ----------  New banner styles  ---------- */
-        .banner {{
-            background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
-            color: #fff;
-            padding: 1rem 1.5rem;
-            border-radius: 14px;
-            margin-bottom: 1.5rem;
-            display: flex;
-            align-items: center;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.12);
-        }}
-        .banner .title {{
-            font-size: 2.1rem;
-            font-weight: 600;
-        }}
-        .banner img, .banner span.beetle {{
-            width: 52px; height: 52px;
-            margin-right: 16px;
-        }}
+    /* ---------- Banner styles ---------- */
+    .banner {{
+        background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+        color:#fff; padding:1rem 1.5rem; border-radius:14px; display:flex; align-items:center;
+        box-shadow:0 4px 10px rgba(0,0,0,0.12); margin-bottom:1.5rem;
+    }}
+    .banner img, .banner span.beetle {{ width:56px; height:56px; margin-right:18px; }}
+    .banner .title {{ font-size:2.2rem; font-weight:600; }}
 
-        /* Extra polish for tabs */
-        .stTabs [role="tab"] {{ padding: 8px 24px; font-weight: 600; }}
-        .stTabs [aria-selected="true"] {{ color: var(--primary); }}
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+    /* Tabs styling */
+    .stTabs [role="tab"] {{ padding:8px 24px; font-weight:600; }}
+    .stTabs [aria-selected="true"] {{ color:var(--primary); }}
+</style>
+""", unsafe_allow_html=True)
 
-###############################################################################
-# DSS Banner (logo or beetle) – larger & centred
-###############################################################################
+# ---------------------------------------------------------------------------
+# DSS Banner (logo or beetle)
+# ---------------------------------------------------------------------------
 if os.path.exists("dss_logo.png"):
-    icon_html = f"<img src='dss_logo.png' alt='DSS logo'>"
+    icon_html = "<img src='dss_logo.png' alt='DSS logo'>"
+elif os.path.exists("green_beetle.png"):
+    icon_html = "<img src='green_beetle.png'>"
 else:
-    # Budget beetle – hue‑shift if green_beetle exists else emoji
-    if os.path.exists("green_beetle.png"):
-        icon_html = "<img src='green_beetle.png'>"
-    else:
-        icon_html = "<span class='beetle'>🐞</span>"
+    icon_html = "<span class='beetle'>🐞</span>"
 
-st.markdown(
-    f"""
-    <div class='banner'>
-        {icon_html}
-        <span class='title'>Family Tax Benefit Calculator&nbsp;2024‑25</span>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+st.markdown(f"""
+<div class='banner'>
+    {icon_html}
+    <span class='title'>Family Tax Benefit Calculator&nbsp;2024‑25</span>
+</div>
+""", unsafe_allow_html=True)
 
 ###############################################################################
-# 2024‑25 Constants & Rates (unchanged)
+# 2024‑25 Constants & Rates
 ###############################################################################
 RATES: Dict[str, Dict] = {
     "ftb_a": {
@@ -123,9 +101,8 @@ RATES: Dict[str, Dict] = {
 }
 
 ###############################################################################
-# Dataclasses & helpers (unchanged logic)
+# Dataclasses & Helper functions
 ###############################################################################
-from dataclasses import dataclass
 @dataclass
 class Child:
     age: int
@@ -144,11 +121,112 @@ class Family:
 def pf_to_annual(pf: float) -> float:
     return round(pf * 26, 2)
 
-# (All calculation functions remain identical to previous version)
-# ---------------------------------------------------------------------------
-#   ... [cut for brevity – no functional edits] ...
-# ---------------------------------------------------------------------------
+# ---------- Child‑level helpers ----------
 
-#  (Place the original calc_ftb_part_a, calc_ftb_part_b, part_a_income_limit
-#   and the Streamlit tabbed UI code here – unchanged. The only edits above are
-#   visual/CSS and banner‑related.)
+def child_max_rate_pf(c: Child) -> float:
+    if c.age <= 12:
+        return RATES["ftb_a"]["max_pf"]["0_12"]
+    elif c.age <= 15:
+        return RATES["ftb_a"]["max_pf"]["13_15"]
+    return RATES["ftb_a"]["max_pf"]["16_19"]
+
+def child_base_rate_pf(c: Child) -> float:
+    return RATES["ftb_a"]["base_pf"]["0_12"] if c.age <= 12 else RATES["ftb_a"]["base_pf"]["13_plus"]
+
+def child_penalties_pf(c: Child) -> float:
+    pen = 0.0
+    if not c.immunised:
+        pen += RATES["compliance_penalty_pf"]
+    if 4 <= c.age <= 5 and not c.healthy_start:
+        pen += RATES["compliance_penalty_pf"]
+    return pen
+
+###############################################################################
+# FTB Part A calculations (Method 1 & Method 2)
+###############################################################################
+
+def calc_ftb_part_a(fam: Family) -> Dict:
+    rates = RATES["ftb_a"]
+    # ---- Method 1 ----
+    total_max_pf, total_base_pf = 0.0, 0.0
+    for ch in fam.children:
+        max_pf = child_max_rate_pf(ch)
+        base_pf = child_base_rate_pf(ch)
+        if not ch.maintenance_ok:
+            max_pf = min(max_pf, base_pf)
+        pen = child_penalties_pf(ch)
+        max_pf = max(max_pf - pen, 0)
+        base_pf = max(base_pf - pen, 0)
+        total_max_pf += max_pf
+        total_base_pf += base_pf
+
+    ati = fam.primary_income + fam.secondary_income
+    if fam.on_income_support:
+        m1_pf = total_max_pf
+    else:
+        if ati <= rates["lower_ifa"]:
+            m1_pf = total_max_pf
+        elif ati <= rates["higher_ifa"]:
+            m1_pf = max(total_max_pf - (ati - rates["lower_ifa"]) * rates["taper1"] / 26, total_base_pf)
+        else:
+            m1_pf = max(total_base_pf - (ati - rates["higher_ifa"]) * rates["taper2"] / 26, 0)
+
+    # ---- Method 2 ----
+    base_total_pf = sum(max(child_base_rate_pf(ch) - child_penalties_pf(ch), 0) for ch in fam.children)
+    if fam.on_income_support or ati <= rates["higher_ifa"]:
+        m2_pf = base_total_pf
+    else:
+        m2_pf = max(base_total_pf - (ati - rates["higher_ifa"]) * rates["taper2"] / 26, 0)
+
+    best_pf = max(m1_pf, m2_pf)
+    annual_core = pf_to_annual(best_pf)
+    supp = rates["supplement"] if best_pf > 0 and (fam.on_income_support or ati <= rates["supplement_income_limit"]) else 0
+
+    return {"pf": round(best_pf,2), "annual": annual_core, "supp": supp, "annual_total": round(annual_core + supp,2)}
+
+###############################################################################
+# FTB Part B calculation (Guide 3.1.9.10 / 3.1.9.20)
+###############################################################################
+
+def calc_ftb_part_b(fam: Family, include_es: bool=False) -> Dict:
+    rates = RATES["ftb_b"]
+    if not fam.children:
+        return {k:0 for k in ("pf","annual","supp","energy","annual_total")}
+
+    youngest = min(ch.age for ch in fam.children)
+    std_pf = rates["max_pf"]["under_5"] if youngest < 5 else rates["max_pf"]["5_to_18"]
+    es_pf  = rates["energy_pf"]["under_5"] if youngest < 5 else rates["energy_pf"]["5_to_18"]
+
+    # ---- Method 1 (single) ----
+    if not fam.partnered:
+        payable_pf = std_pf if fam.primary_income <= rates["primary_limit"] else 0.0
+    # ---- Method 2 (couple) ----
+    else:
+        if youngest >= 13:
+            payable_pf = 0.0
+        else:
+            primary = max(fam.primary_income, fam.secondary_income)
+            secondary = min(fam.primary_income, fam.secondary_income)
+            if primary > rates["primary_limit"]:
+                payable_pf = 0.0
+            else:
+                excess = max(0, secondary - rates["secondary_free_area"])
+                payable_pf = std_pf - excess * rates["taper"] / 26
+                if payable_pf < 0.01:
+                    payable_pf = 0.0
+
+    annual_core = pf_to_annual(payable_pf)
+    supplement  = rates["supplement"] if payable_pf > 0 else 0.0
+    energy      = pf_to_annual(es_pf) if include_es and payable_pf > 0 else 0.0
+
+    return {"pf": round(payable_pf,2), "annual": annual_core, "supp": supplement, "energy": energy,
+            "annual_total": round(annual_core + supplement + energy,2)}
+
+###############################################################################
+# Part A nil-rate ATI (selected look‑up table)
+###############################################################################
+
+def part_a_income_limit(n:int, u:int, o:int) -> float|None:
+    limits = {
+        (1,1,0):122_190,(1,0,1):122_190,
+        (2,2,0):128_383,(2,1,1):128_383,(2,0
