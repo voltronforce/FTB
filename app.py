@@ -5,18 +5,19 @@
 
 This Streamlit app calculates Family Tax Benefit Parts A & B using official
 rates and thresholds.  It maintains the DSS look‑and‑feel while adding a quirky
-**green beetle icon** (we’ve nick‑named it *Budget Beetle*) requested by the
-user.
+**green beetle icon** (nick‑named *Budget Beetle*) requested by the user.
 
 Highlights
 ---------
 * **DSS colour palette** – navy #00558B & teal #009CA6.  
-* **Optional DSS banner** (`dss_logo.png`).  
-* **Optional beetle logo** (`green_beetle.png`) – shown inline if present; if
-  not, we fall back to a CSS‑tinted 🐞 emoji.  
-* Clean two‑column layout and teal action button.
+* **Optional DSS banner** → place `dss_logo.png` beside the script.  
+* **Optional beetle logo** → place `green_beetle.png`; otherwise a CSS‑tinted 🐞.
+* Clean two‑column layout & teal primary action button.
 
-Run: `streamlit run ftb_streamlit_app_updated.py`
+Run with:
+```
+streamlit run ftb_streamlit_app_updated.py
+```
 """
 from __future__ import annotations
 from dataclasses import dataclass
@@ -32,8 +33,8 @@ PRIMARY = "#00558B"  # DSS navy
 ACCENT  = "#009CA6"  # DSS teal
 
 st.set_page_config(
-    page_title="DSS – Family Tax Benefit Calculator 2024‑25",
-    page_icon="🐞",  # CSS‑tinted in header
+    page_title="DSS – Family Tax Benefit Calculator 2024‑25",
+    page_icon="🐞",  # CSS‑tinted when no PNG provided
     layout="centered",
 )
 
@@ -52,7 +53,7 @@ st.markdown(
 )
 
 ###############################################################################
-# HEADER WITH LOGOS
+# HEADER WITH LOGOS / ICONS
 ###############################################################################
 
 if os.path.exists("dss_logo.png"):
@@ -61,7 +62,7 @@ if os.path.exists("dss_logo.png"):
 if os.path.exists("green_beetle.png"):
     beetle_html = "<img src='green_beetle.png' width='32' style='vertical-align:middle;margin-right:8px;'>"
 else:
-    beetle_html = "<span class='beetle'>🐞</span> "
+    beetle_html = "<span class='beetle'>🐞</span>&nbsp;"
 
 st.markdown(
     f"<div class='dss-header'>{beetle_html}<h1 style='display:inline'>Family Tax Benefit Calculator 2024‑25</h1></div>",
@@ -108,7 +109,7 @@ class Family:
     partnered: bool
     primary_income: float
     secondary_income: float = 0.0
-    children: List[Child] = None
+    children: List[Child] | None = None
     receives_income_support: bool = False
 
 ###############################################################################
@@ -116,56 +117,71 @@ class Family:
 ###############################################################################
 
 def pf_to_annual(amount_pf: float) -> float:
+    """Convert a fortnightly amount to annual (26 fortnights)."""
     return round(amount_pf * 26, 2)
 
 
 def calc_ftb_a_child_pf(child: Child, fam_income: float, kids: int, on_is: bool) -> float:
     ra = RATES_2025["ftb_a"]
-    core = (
-        ra["max_rate_pf"]["0_12"] if child.age <= 12 else (
-            ra["max_rate_pf"]["13_15"] if child.age <= 15 else ra["max_rate_pf"]["16_19_secondary"]
-        )
-    )
+    # Core by age
+    if child.age <= 12:
+        core = ra["max_rate_pf"]["0_12"]
+    elif child.age <= 15:
+        core = ra["max_rate_pf"]["13_15"]
+    else:
+        core = ra["max_rate_pf"]["16_19_secondary"]
+
+    # Income test (skip if on income support)
     if not on_is and fam_income > ra["lower_threshold"]:
         excess = fam_income - ra["lower_threshold"]
-        red = excess * ra["primary_taper"] if fam_income <= ra["higher_threshold"] else (
-            (ra["higher_threshold"] - ra["lower_threshold"]) * ra["primary_taper"] +
-            (fam_income - ra["higher_threshold"]) * ra["secondary_taper"]
-        )
-        core = max(core - red / kids, 0)
+        if fam_income <= ra["higher_threshold"]:
+            reduction = excess * ra["primary_taper"]
+        else:
+            reduction = (
+                (ra["higher_threshold"] - ra["lower_threshold"]) * ra["primary_taper"] +
+                (fam_income - ra["higher_threshold"]) * ra["secondary_taper"]
+            )
+        core = max(core - reduction / kids, 0)
+
+    # Compliance penalties (flat $34.44 pf each)
     if not child.immunised:
         core -= RATES_2025["compliance_reduction_pf"]
     if 4 <= child.age <= 5 and not child.healthy_start:
         core -= RATES_2025["compliance_reduction_pf"]
+
+    # Maintenance action test → limit to base rate if not taken reasonable action
     if not child.maintenance_action_ok:
         core = min(core, ra["base_rate_pf"])
+
     return max(core, 0)
 
 
-def calc_ftb_a(fam: Family):
+def calc_ftb_a(fam: Family) -> Dict[str, float]:
     kids = len(fam.children)
-    pf_total = sum(
+    total_pf = sum(
         calc_ftb_a_child_pf(ch, fam.primary_income + fam.secondary_income, kids, fam.receives_income_support)
         for ch in fam.children
     )
-    annual = pf_to_annual(pf_total)
-    supp = RATES_2025["ftb_a"]["supplement_annual"] if pf_total > 0 else 0
-    return {"pf": pf_total, "annual": annual, "supp": supp, "annual_total": annual + supp}
+    annual = pf_to_annual(total_pf)
+    supp = RATES_2025["ftb_a"]["supplement_annual"] if total_pf > 0 else 0.0
+    return {"pf": total_pf, "annual": annual, "supp": supp, "annual_total": annual + supp}
 
 
-def calc_ftb_b(fam: Family):
+def calc_ftb_b(fam: Family) -> Dict[str, float]:
     rb = RATES_2025["ftb_b"]
     youngest = min(ch.age for ch in fam.children)
     base_pf = rb["max_rate_pf"]["<5" if youngest < 5 else "5_18"]
+
     if fam.partnered:
         sec_red = max(fam.secondary_income - rb["secondary_earner_free_area"], 0) * rb["taper"]
         core_pf = max(base_pf - sec_red, 0)
         if fam.primary_income > rb["primary_earner_limit"]:
-            core_pf = 0
+            core_pf = 0.0
     else:
         core_pf = base_pf
+
     annual = pf_to_annual(core_pf)
-    supp = rb["supplement_annual"] if core_pf > 0 else 0
+    supp = rb["supplement_annual"] if core_pf > 0 else 0.0
     return {"pf": core_pf, "annual": annual, "supp": supp, "annual_total": annual + supp}
 
 ###############################################################################
@@ -174,23 +190,23 @@ def calc_ftb_b(fam: Family):
 
 st.sidebar.header("Household details")
 partnered = st.sidebar.checkbox("Couple household", value=True)
-pi = st.sidebar.number_input("Primary earner income ($ p.a.)", 0, 500_000, 0, 1_000, format="%d")
-si = 0
+primary_income = st.sidebar.number_input("Primary earner income ($ p.a.)", 0, 500_000, 0, 1_000, format="%d")
+secondary_income = 0
 if partnered:
-    si = st.sidebar.number_input("Secondary earner income ($ p.a.)", 0, 500_000, 0, 1_000, format="%d")
+    secondary_income = st.sidebar.number_input("Secondary earner income ($ p.a.)", 0, 500_000, 0, 1_000, format="%d")
 receives_is = st.sidebar.checkbox("Receiving income support?", value=False)
 num_kids = st.sidebar.number_input("Number of dependent children", 1, 10, 1, 1)
 
 children: List[Child] = []
 for i in range(int(num_kids)):
-    with st.expander(f"Child {i+1} details"):
+    with st.expander(f"Child {i+1} details"):
         age = st.slider("Age", 0, 19, 0, 1, key=f"age_{i}")
         immun = st.checkbox("Immunised", True, key=f"imm_{i}")
         hs = st.checkbox("Healthy‑Start check (age 4‑5)", True, key=f"hs_{i}")
         ma = st.checkbox("Maintenance action taken", True, key=f"ma_{i}")
     children.append(Child(age, immun, hs, ma))
 
-fam = Family(partnered, pi, si, children, receives_is)
+fam = Family(partnered, primary_income, secondary_income, children, receives_is)
 
 ###############################################################################
 # CALCULATE & DISPLAY RESULTS
@@ -203,8 +219,12 @@ if st.button("Calculate FTB"):
 
     colA, colB = st.columns(2)
     with colA:
-        st.subheader("FTB Part A")
+        st.subheader("FTB Part A")
         st.write(f"**Fortnightly:** ${part_a['pf']:.2f}")
         st.write(f"**Annual (ex‑supp):** ${part_a['annual']:.2f}")
         st.write(f"**Supplement:** ${part_a['supp']:.2f}")
-        st.write(f"**Annual incl. supp:** ${part_a['annual_total']:.
+        st.write(f"**Annual incl. supp:** ${part_a['annual_total']:.2f}")
+
+    with colB:
+        st.subheader("FTB Part B")
+        st.write
