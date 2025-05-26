@@ -16,19 +16,7 @@ st.set_page_config(
 """
 Department of Social Services – Family Tax Benefit Calculator (2024‑25)
 =======================================================================
-Enhanced Streamlit application that calculates Family Tax Benefit (Parts A & B)
-using 2024‑25 rates and the rules in the Family Assistance Guide (FAG 3.1.1‑3.1.9).
 
-Enhanced Visual Design (May 2025)
----------------------------------
-* Premium DSS banner with gradient effects and larger branding
-* Modern card-based layout with shadows and rounded corners
-* **Five-tab layout** — *Calculator • Reverse Calculator • Income Buffer • Eligibility Thresholds • Rate Details*
-* Enhanced typography and color scheme
-* Interactive visual elements and improved user experience
-
-Run with:
-    streamlit run enhanced_ftb_calculator.py
 """
 
 ###############################################################################
