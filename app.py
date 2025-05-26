@@ -267,6 +267,14 @@ def main():
         initial_sidebar_state="expanded"
     )
     
+    # Initialize session state for rates first
+    if 'rates' not in st.session_state:
+        try:
+            st.session_state.rates = FTBRates()
+        except Exception as e:
+            st.error(f"Error initializing rates: {e}")
+            st.stop()
+    
     # Custom CSS
     st.markdown("""
     <style>
@@ -324,10 +332,6 @@ def main():
     </div>
     """, unsafe_allow_html=True)
     
-    # Initialize session state for rates
-    if 'rates' not in st.session_state:
-        st.session_state.rates = FTBRates()
-    
     # Sidebar for navigation
     st.sidebar.title("Navigation")
     page = st.sidebar.selectbox(
@@ -335,17 +339,25 @@ def main():
         ["Calculator", "Results", "Charts", "Rates & Thresholds"]
     )
     
-    if page == "Calculator":
-        calculator_page()
-    elif page == "Results":
-        results_page()
-    elif page == "Charts":
-        charts_page()
-    elif page == "Rates & Thresholds":
-        rates_page()
+    try:
+        if page == "Calculator":
+            calculator_page()
+        elif page == "Results":
+            results_page()
+        elif page == "Charts":
+            charts_page()
+        elif page == "Rates & Thresholds":
+            rates_page()
+    except Exception as e:
+        st.error(f"An error occurred: {e}")
+        st.info("Please try refreshing the page or resetting the rates in the 'Rates & Thresholds' tab.")
 
 def calculator_page():
     st.header("Family Tax Benefit Calculator")
+    
+    # Initialize rates if not present
+    if 'rates' not in st.session_state:
+        st.session_state.rates = FTBRates()
     
     col1, col2 = st.columns(2)
     
@@ -356,10 +368,14 @@ def calculator_page():
         rent_assistance = st.number_input("Annual Rent Assistance ($):", min_value=0.0, value=0.0, step=100.0)
         income_support = st.checkbox("Family receives income support payment")
         
-        st.info("📊 **Income Test Information:**\n"
-                f"• FTB Part A Income Free Area: ${st.session_state.rates.ftb_a_income_free_area:,}\n"
-                f"• FTB Part A Higher Income Free Area: ${st.session_state.rates.ftb_a_higher_income_free_area:,}\n"
-                f"• FTB Part B Income Free Area: ${st.session_state.rates.ftb_b_income_free_area:,}")
+        try:
+            st.info("📊 **Income Test Information:**\n"
+                    f"• FTB Part A Income Free Area: ${st.session_state.rates.ftb_a_income_free_area:,}\n"
+                    f"• FTB Part A Higher Income Free Area: ${st.session_state.rates.ftb_a_higher_income_free_area:,}\n"
+                    f"• FTB Part B Income Free Area: ${st.session_state.rates.ftb_b_income_free_area:,}")
+        except AttributeError as e:
+            st.error(f"Error loading rates: {e}")
+            st.session_state.rates = FTBRates()  # Reset to defaults
     
     with col2:
         st.subheader("Children Information")
@@ -868,7 +884,7 @@ def rates_page():
         if st.button("🔄 Reset to Official Rates"):
             st.session_state.rates = FTBRates()
             st.success("Rates reset to official 2024-25 values!")
-            st.experimental_rerun()
+            st.rerun()
     
     with col2:
         if st.button("✅ Validate Current Rates"):
