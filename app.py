@@ -30,9 +30,9 @@ class FTBRates:
     def ftb_a_base_rate_fortnightly(self) -> float:
         return self.ftb_a_base_rate_annual / 26
     
-    # FTB Part B standard rates (annual) - from Family Assistance Guide
-    ftb_b_under_5_annual: float = 4923.85   # youngest child under 5
-    ftb_b_5_to_13_annual: float = 3434.65   # youngest child 5-13 (couples) or 5-18 (singles)
+    # FTB Part B standard rates (annual) - CORRECTED 2024-25 rates
+    ftb_b_under_5_annual: float = 5372.80   # youngest child under 5 - CORRECTED
+    ftb_b_5_to_13_annual: float = 3883.60   # youngest child 5-13 (couples) or 5-18 (singles) - CORRECTED
     
     @property
     def ftb_b_under_5_fortnightly(self) -> float:
@@ -788,7 +788,8 @@ def charts_page():
 
 def rates_page():
     st.header("⚙️ FTB Rates and Thresholds (2024-25)")
-    st.info("These rates are based on the official Family Assistance Guide and Services Australia. You can edit them to test scenarios.")
+    st.info("These rates have been updated to reflect the correct 2024-25 FTB Part B maximum rates.")
+    st.success("✅ **FTB Part B rates corrected:** Under 5: $5,372.80 | 5+ years: $3,883.60")
     
     # Current vs Editable rates
     col1, col2 = st.columns(2)
@@ -827,13 +828,13 @@ def rates_page():
             "Standard rate - youngest under 5:", 
             value=st.session_state.rates.ftb_b_under_5_annual, 
             step=1.0,
-            help="Official rate: $4,923.85 per year"
+            help="Corrected official rate: $5,372.80 per year"
         )
         st.session_state.rates.ftb_b_5_to_13_annual = st.number_input(
             "Standard rate - youngest 5+:", 
             value=st.session_state.rates.ftb_b_5_to_13_annual, 
             step=1.0,
-            help="Official rate: $3,434.65 per year"
+            help="Corrected official rate: $3,883.60 per year"
         )
         
         st.write("**Fortnightly Equivalents:**")
