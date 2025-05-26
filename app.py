@@ -209,6 +209,7 @@ for i in range(int(num_kids)):
 fam = Family(partnered, primary_income, secondary_income, children, receives_is)
 
 ###############################################################################
+###############################################################################
 # CALCULATE & DISPLAY RESULTS
 ###############################################################################
 
@@ -218,6 +219,7 @@ if st.button("Calculate FTB"):
     st.success("Calculation complete!")
 
     colA, colB = st.columns(2)
+    # ── Part A ────────────────────────────────────────────────────────────
     with colA:
         st.subheader("FTB Part A")
         st.write(f"**Fortnightly:** ${part_a['pf']:.2f}")
@@ -225,6 +227,15 @@ if st.button("Calculate FTB"):
         st.write(f"**Supplement:** ${part_a['supp']:.2f}")
         st.write(f"**Annual incl. supp:** ${part_a['annual_total']:.2f}")
 
+    # ── Part B ────────────────────────────────────────────────────────────
     with colB:
         st.subheader("FTB Part B")
-        st.write
+        st.write(f"**Fortnightly:** ${part_b['pf']:.2f}")
+        st.write(f"**Annual (ex‑supp):** ${part_b['annual']:.2f}")
+        st.write(f"**Supplement:** ${part_b['supp']:.2f}")
+        st.write(f"**Annual incl. supp:** ${part_b['annual_total']:.2f}")
+
+    # ── Totals ────────────────────────────────────────────────────────────
+    total_annual = part_a['annual_total'] + part_b['annual_total']
+    st.markdown("---")
+    st.header(f"Total FTB annual (after supplements): ${total_annual:,.2f}")
