@@ -426,68 +426,61 @@ def calc_ftb_part_b(fam: Family, include_es: bool = False) -> Dict:
     }
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  Helper – annualise a fortnightly amount with the legislated 365-day factor
+#  Helpers – 365-day annualisation
 # ─────────────────────────────────────────────────────────────────────────────
-FTNS_PER_YEAR = 365 / 14        # 26.071428…
+FTNS_PER_YEAR = 365 / 14           # 26.071428…  (official conversion)
 
-def pf_to_testable_annual(pf: float) -> float:
-    """
-    Convert a fortnightly rate into an annual ‘testable’ amount
-    (365-day factor) *excluding* the end-of-year supplement, because
-    that part is NOT subject to the income test.
-    """
-    return pf * FTNS_PER_YEAR        #  👈  no rounding yet
+def pf_to_annual(pf: float) -> float:
+    """Convert a fortnightly rate to an annual amount using 365-day factor."""
+    return pf * FTNS_PER_YEAR
+
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  Revised income-limit calculator for FTB Part A
+#  Revised FTB Part A income-cut-out calculator
 # ─────────────────────────────────────────────────────────────────────────────
 def find_ftb_a_cutoff(family_structure: Dict) -> Dict[str, int]:
     """
-    Returns three critical income points for this family:
-        • supplement eligibility cut-off  ($80 000)
-        • start of 30 ¢ taper              ($115 997)
-        • income where payment reaches $0 (max of the ‘maximum-rate’ and
-          ‘base-rate’ tests)
-    Implements the 2024-25 test exactly as described in the Guide.
+    Return three critical incomes for this family:
+        • supplement eligibility cut-off ($80 000)
+        • start of 30 ¢ taper ($115 997)
+        • income where FTB A reaches $0 (higher of the two statutory tests)
+    Implements the 2024-25 rules exactly as in the Guide to Payments.
     """
     rates = RATES["ftb_a"]
 
-    # ── 1. Count children by age band ──────────────────────────────────────
+    # 1️⃣  Count children by age band
     n_0_12  = sum(1 for a in family_structure["child_ages"] if a <= 12)
     n_13_19 = len(family_structure["child_ages"]) - n_0_12
 
-    # ── 2. Build the “testable” annual maximum rate (supplement removed) ──
-    max0_12_annual  = pf_to_testable_annual(rates["max_pf"]["0_12"])  # 222.04 pf
-    max13_19_annual = pf_to_testable_annual(rates["max_pf"]["13_15"]) # 288.82 pf
-
-    #  Remove $916.15 supplement per child (not income-tested)
-    max0_12_annual  -= rates["supplement"]
-    max13_19_annual -= rates["supplement"]
-
+    # 2️⃣  “Testable” maximum annual rate (note: the pf rates ALREADY exclude
+    #      supplements, so no $916.15 subtraction here!)
+    max0_12_annual  = pf_to_annual(rates["max_pf"]["0_12"])   # 222.04 pf
+    max13_19_annual = pf_to_annual(rates["max_pf"]["13_15"])  # 288.82 pf
     R_max = n_0_12 * max0_12_annual + n_13_19 * max13_19_annual
 
-    # ── 3. Annual base rate (one figure for any age) ───────────────────────
-    base_annual_per_child = pf_to_testable_annual(rates["base_pf"]["0_12"])  # 71.26 pf
+    # 3️⃣  Annual base rate (same for all ages)
+    base_annual_per_child = pf_to_annual(rates["base_pf"]["0_12"])  # 71.26 pf
     R_base = (n_0_12 + n_13_19) * base_annual_per_child
 
-    # ── 4. Fixed parameters of the income test ─────────────────────────────
-    lower_ifa   = rates["lower_ifa"]   # $65 189 :contentReference[oaicite:0]{index=0}
-    higher_ifa  = rates["higher_ifa"]  # $115 997 :contentReference[oaicite:1]{index=1}
-    k1, k2      = rates["taper1"], rates["taper2"]   # 20 ¢ / 30 ¢
-    F           = k1 * (higher_ifa - lower_ifa)      # “fixed reduction”
+    # 4️⃣  Fixed parameters of the income test
+    lower_ifa   = rates["lower_ifa"]          # $65 189
+    higher_ifa  = rates["higher_ifa"]         # $115 997
+    k1, k2      = rates["taper1"], rates["taper2"]   # 0.20 / 0.30
+    fixed_red   = k1 * (higher_ifa - lower_ifa)      # = 0.20 × 50 808
 
-    # ── 5. Cut-out from maximum-rate test ──────────────────────────────────
-    X_cut_max  = higher_ifa + (R_max  - F) / k2
+    # 5️⃣  Cut-out from Method 1 (maximum-rate test)
+    X_cut_max  = higher_ifa + (R_max  - fixed_red) / k2
 
-    # ── 6. Cut-out from base-rate test  ────────────────────────────────────
+    # 6️⃣  Cut-out from Method 2 (base-rate test)
     X_cut_base = higher_ifa +  R_base / k2
 
-    zero_payment = round(max(X_cut_max, X_cut_base))
+    # 7️⃣  Final income limit = higher of the two
+    zero_payment = round(max(X_cut_max, X_cut_base))  # Guide rounds to $1
 
     return {
-        "supplement_cutoff": rates["supplement_income_limit"],  # $80 000 :contentReference[oaicite:2]{index=2}
-        "taper_start":       higher_ifa,
-        "zero_payment":      zero_payment,
+        "supplement_cutoff": rates["supplement_income_limit"],  # $80 000
+        "taper_start":       higher_ifa,                        # $115 997
+        "zero_payment":      zero_payment                       # e.g. $140 014
     }
 
 def find_ftb_b_cutoff(family_structure: Dict) -> Dict:
