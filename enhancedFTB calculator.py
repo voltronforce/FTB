@@ -430,26 +430,22 @@ def calc_ftb_part_b(fam: Family, include_es: bool = False) -> Dict:
 ###############################################################################
 
 def find_ftb_a_cutoff(family_structure: Dict) -> Dict:
-    """Find the income where FTB Part A reduces to zero"""
     rates = RATES["ftb_a"]
-    
-    # Calculate base amounts for the family
-    total_base_pf = 0.0
-    for child_age in family_structure["child_ages"]:
-        if child_age <= 12:
-            total_base_pf += rates["base_pf"]["0_12"]
-        else:
-            total_base_pf += rates["base_pf"]["13_plus"]
-    
-    # Calculate cutoff income (where payment goes to zero)
-    cutoff_income = rates["higher_ifa"] + (total_base_pf * 26) / rates["taper2"]
-    
+
+    # 1. Annualise base rate with 365.25 / 14 fortnights (≈26.0893)
+    base_annual = 0.0
+    for age in family_structure["child_ages"]:
+        pf = rates["base_pf"]["0_12"] if age <= 12 else rates["base_pf"]["13_plus"]
+        base_annual += pf * 365.25 / 14
+
+    # 2. Nil-rate ATI  =  higher_ifa + (base_annual ÷ taper2)
+    zero_payment = np.ceil(rates["higher_ifa"] + base_annual / rates["taper2"]).astype(int)
+
     return {
         "supplement_cutoff": rates["supplement_income_limit"],
         "taper_start": rates["higher_ifa"],
-        "zero_payment": round(cutoff_income, 2)
+        "zero_payment": zero_payment
     }
-
 def find_ftb_b_cutoff(family_structure: Dict) -> Dict:
     """Find the income where FTB Part B reduces to zero"""
     rates = RATES["ftb_b"]
