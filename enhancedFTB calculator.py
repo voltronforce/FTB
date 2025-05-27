@@ -442,9 +442,9 @@ def find_ftb_a_cutoff(family_structure: Dict) -> Dict:
         base_daily_total += daily_rate
 
     # Annualise using 365 days
-  DAYS_IN_YEAR = 365           # or 366 for leap years if you wish
-FORTNIGHT_DAYS = 14
-base_annual = base_pf_single_child / FORTNIGHT_DAYS * DAYS_IN_YEAR
+    DAYS_IN_YEAR = 365           # or 366 for leap years if you wish
+    FORTNIGHT_DAYS = 14
+    base_annual = base_pf_single_child / FORTNIGHT_DAYS * DAYS_IN_YEAR
 
     # Calculate zero payment threshold
     zero_payment = rates["higher_ifa"] + (base_annual / rates["taper2"])
