@@ -430,36 +430,30 @@ def calc_ftb_part_b(fam: Family, include_es: bool = False) -> Dict:
 ###############################################################################
 
 def find_ftb_a_cutoff(family_structure: Dict) -> Dict:
+    """Find income thresholds for FTB Part A using daily rate approach"""
     rates = RATES["ftb_a"]
 
-    # 1. Annualise base rate with 365.25 / 14 fortnights (≈26.0893)
-    base_annual = 0.0
+    # Calculate total base rate per day
+    base_daily_total = 0.0
     for age in family_structure["child_ages"]:
         pf = rates["base_pf"]["0_12"] if age <= 12 else rates["base_pf"]["13_plus"]
-        base_annual += pf * 365.25 / 14
+        # Convert fortnightly to daily rate
+        daily_rate = pf / 14
+        base_daily_total += daily_rate
 
-    # 2. Nil-rate ATI  =  higher_ifa + (base_annual ÷ taper2)
-    zero_payment = np.ceil(rates["higher_ifa"] + base_annual / rates["taper2"]).astype(int)
+    # Annualise using 365 days
+    base_annual = base_daily_total * 365
+
+    # Calculate zero payment threshold
+    zero_payment = rates["higher_ifa"] + (base_annual / rates["taper2"])
+    
+    # Round to nearest dollar
+    zero_payment = round(zero_payment)
 
     return {
         "supplement_cutoff": rates["supplement_income_limit"],
-        "taper_start": rates["higher_ifa"],
+        "taper_start": rates["higher_ifa"], 
         "zero_payment": zero_payment
-    }
-def find_ftb_b_cutoff(family_structure: Dict) -> Dict:
-    """Find the income where FTB Part B reduces to zero"""
-    rates = RATES["ftb_b"]
-    
-    youngest_age = min(family_structure["child_ages"])
-    max_pf = rates["max_pf"]["under_5"] if youngest_age < 5 else rates["max_pf"]["5_to_18"]
-    
-    # Secondary income cutoff
-    secondary_cutoff = rates["secondary_free_area"] + (max_pf * 26) / rates["taper"]
-    
-    return {
-        "primary_limit": rates["primary_limit"],
-        "secondary_free_area": rates["secondary_free_area"],
-        "secondary_cutoff": round(secondary_cutoff, 2)
     }
 
 ###############################################################################
