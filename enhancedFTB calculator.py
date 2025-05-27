@@ -5,14 +5,14 @@ import streamlit as st
 
 # Page configuration MUST be the very first Streamlit command
 st.set_page_config(
-    page_title="DSS – Family Tax Benefit Calculator 2024‑25",
+    page_title="Family Tax Benefit Calculator 2024‑25",
     page_icon="🐞", 
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
 """
-Department of Social Services – Family Tax Benefit Calculator (2024‑25)
+Family Tax Benefit Calculator (2024‑25)
 =======================================================================
 """
 
@@ -278,7 +278,7 @@ st.markdown("""
     <div class='hero-content'>
         <div class='logo'>🐞</div>
         <div class='title'>Family Tax Benefit Calculator</div>
-        <div class='subtitle'>2024‑25 • Department of Social Services</div>
+        <div class='subtitle'>2024‑25</div>
     </div>
 </div>
 """, unsafe_allow_html=True)
