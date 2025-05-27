@@ -431,30 +431,50 @@ def calc_ftb_part_b(fam: Family, include_es: bool = False) -> Dict:
 
 def find_ftb_a_cutoff(family_structure: Dict) -> Dict:
     """
-    Return the income points at which:
-        • the Part A supplement is lost
-        • the higher-rate taper starts
-        • the payment reaches $0
-    Uses the legislation-correct 365-day annual factor (26.071428 fortnights).
+    Income points for FTB Part A:
+        • supplement lost ($80 000)
+        • higher-rate taper starts ($115 997)
+        • payment reaches $0  (two-stage taper formula)
     """
-    rates = RATES["ftb_a"]
+    r = RATES["ftb_a"]
+    FACTOR = 26.071428          # 365-day year ÷ 14-day fortnights
 
-    # ---- 1. build the combined BASE rate per day for this family ----
-    base_daily_total = 0.0
+    # ── 1. Work out the family’s fortnightly maximum & base rates ────────────
+    total_max_pf  = 0.0
+    total_base_pf = 0.0
     for age in family_structure["child_ages"]:
-        pf = rates["base_pf"]["0_12"] if age <= 12 else rates["base_pf"]["13_plus"]
-        base_daily_total += pf / 14          # convert ftn → day
+        max_pf  = r["max_pf"]["0_12"] if age <= 12 else r["max_pf"]["13_15"]  # 16-19 same as 13-15
+        base_pf = r["base_pf"]["0_12"] if age <= 12 else r["base_pf"]["13_plus"]
+        total_max_pf  += max_pf
+        total_base_pf += base_pf
 
-    # ---- 2. convert that daily figure to an annual figure (365 days) ----
-    base_annual = base_daily_total * 365     # ← nothing undefined here!
+    # ── 2. Convert payment amounts to annual dollars (365-day year) ──────────
+    max_annual  = total_max_pf  * FACTOR
+    base_annual = total_base_pf * FACTOR
 
-    # ---- 3. income where payment tapers to zero (30 ¢ taper) ----
-    zero_payment = rates["higher_ifa"] + base_annual / rates["taper2"]
+    # ── 3. Two-stage taper calculation ───────────────────────────────────────
+    income_range1 = r["higher_ifa"] - r["lower_ifa"]          # $50 808
+    taper1 = r["taper1"]                                       # 0.20
+    taper2 = r["taper2"]                                       # 0.30
+
+    # Income needed in the first taper to fall from MAX ➜ BASE
+    inc_needed_t1 = (max_annual - base_annual) / taper1
+
+    # You can’t earn more than the stage-1 range
+    income_in_t1 = min(inc_needed_t1, income_range1)
+
+    # Payment left after stage-1
+    payment_after_t1 = max_annual - income_in_t1 * taper1
+
+    # Income still needed in stage-2 to reduce the remainder to zero
+    income_in_t2 = payment_after_t1 / taper2
+
+    zero_payment_income = r["lower_ifa"] + income_in_t1 + income_in_t2
 
     return {
-        "supplement_cutoff": rates["supplement_income_limit"],   # $80 000
-        "taper_start":       rates["higher_ifa"],                # $115 997
-        "zero_payment":      round(zero_payment),                # e.g. $122 190
+        "supplement_cutoff": r["supplement_income_limit"],  # $80 000
+        "taper_start":       r["higher_ifa"],               # $115 997
+        "zero_payment":      round(zero_payment_income),    # e.g. $140 014
     }
 
 def find_ftb_b_cutoff(family_structure: Dict) -> Dict:
