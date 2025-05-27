@@ -430,32 +430,25 @@ def calc_ftb_part_b(fam: Family, include_es: bool = False) -> Dict:
 ###############################################################################
 
 def find_ftb_a_cutoff(family_structure: Dict) -> Dict:
-    """Find income thresholds for FTB Part A using daily rate approach"""
     rates = RATES["ftb_a"]
 
-    # Calculate total base rate per day
+    # build a daily-rate total for all children
     base_daily_total = 0.0
     for age in family_structure["child_ages"]:
         pf = rates["base_pf"]["0_12"] if age <= 12 else rates["base_pf"]["13_plus"]
-        # Convert fortnightly to daily rate
-        daily_rate = pf / 14
-        base_daily_total += daily_rate
+        base_daily_total += pf / 14          # convert fortnightly → daily
 
-    # Annualise using 365 days
-    DAYS_IN_YEAR = 365           # or 366 for leap years if you wish
-    FORTNIGHT_DAYS = 14
-    base_annual = base_pf_single_child / FORTNIGHT_DAYS * DAYS_IN_YEAR
+    # annualise with 365 days (26.0714 fortnights)
+    base_annual = base_daily_total * 365     # <- corrected line
 
-    # Calculate zero payment threshold
+    # zero-rate cut-off
     zero_payment = rates["higher_ifa"] + (base_annual / rates["taper2"])
-    
-    # Round to nearest dollar
     zero_payment = round(zero_payment)
 
     return {
         "supplement_cutoff": rates["supplement_income_limit"],
-        "taper_start": rates["higher_ifa"], 
-        "zero_payment": zero_payment
+        "taper_start":       rates["higher_ifa"],
+        "zero_payment":      zero_payment,
     }
 
 ###############################################################################
