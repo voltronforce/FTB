@@ -430,25 +430,31 @@ def calc_ftb_part_b(fam: Family, include_es: bool = False) -> Dict:
 ###############################################################################
 
 def find_ftb_a_cutoff(family_structure: Dict) -> Dict:
+    """
+    Return the income points at which:
+        • the Part A supplement is lost
+        • the higher-rate taper starts
+        • the payment reaches $0
+    Uses the legislation-correct 365-day annual factor (26.071428 fortnights).
+    """
     rates = RATES["ftb_a"]
 
-    # build a daily-rate total for all children
+    # ---- 1. build the combined BASE rate per day for this family ----
     base_daily_total = 0.0
     for age in family_structure["child_ages"]:
         pf = rates["base_pf"]["0_12"] if age <= 12 else rates["base_pf"]["13_plus"]
-        base_daily_total += pf / 14          # convert fortnightly → daily
+        base_daily_total += pf / 14          # convert ftn → day
 
-    # annualise with 365 days (26.0714 fortnights)
-    base_annual = base_daily_total * 365     # <- corrected line
+    # ---- 2. convert that daily figure to an annual figure (365 days) ----
+    base_annual = base_daily_total * 365     # ← nothing undefined here!
 
-    # zero-rate cut-off
-    zero_payment = rates["higher_ifa"] + (base_annual / rates["taper2"])
-    zero_payment = round(zero_payment)
+    # ---- 3. income where payment tapers to zero (30 ¢ taper) ----
+    zero_payment = rates["higher_ifa"] + base_annual / rates["taper2"]
 
     return {
-        "supplement_cutoff": rates["supplement_income_limit"],
-        "taper_start":       rates["higher_ifa"],
-        "zero_payment":      zero_payment,
+        "supplement_cutoff": rates["supplement_income_limit"],   # $80 000
+        "taper_start":       rates["higher_ifa"],                # $115 997
+        "zero_payment":      round(zero_payment),                # e.g. $122 190
     }
 
 ###############################################################################
