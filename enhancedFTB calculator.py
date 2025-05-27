@@ -457,6 +457,29 @@ def find_ftb_a_cutoff(family_structure: Dict) -> Dict:
         "zero_payment":      round(zero_payment),                # e.g. $122 190
     }
 
+def find_ftb_b_cutoff(family_structure: Dict) -> Dict:
+    """
+    Return the income points at which FTB Part B payments are affected:
+        • primary income limit where payment stops
+        • secondary income free area
+        • secondary income cutoff where payment reaches $0
+    """
+    rates = RATES["ftb_b"]
+    
+    # Get youngest child age to determine which rate applies
+    youngest_age = min(family_structure["child_ages"]) if family_structure["child_ages"] else 5
+    
+    # Determine the nil rates based on youngest child's age
+    if youngest_age < 5:
+        secondary_cutoff = rates["nil_secondary"]["under_5"]
+    else:
+        secondary_cutoff = rates["nil_secondary"]["5_to_12"]
+    
+    return {
+        "primary_limit": rates["primary_limit"],           # $117,194
+        "secondary_free_area": rates["secondary_free_area"], # $6,789
+        "secondary_cutoff": secondary_cutoff,              # $33,653 or $26,207
+    }
 ###############################################################################
 # Enhanced UI Components
 ###############################################################################
