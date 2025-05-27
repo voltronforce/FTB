@@ -432,58 +432,55 @@ def calc_ftb_part_b(fam: Family, include_es: bool = False) -> Dict:
 
 def find_ftb_a_cutoff(family_structure: Dict) -> Dict:
     """
-    Income points for FTB Part A:
-        • supplement lost ($80 000)
-        • higher-rate taper starts ($115 997)
-        • payment reaches $0  (two-stage taper formula)
-    
-    FIXED: Now correctly calculates the zero payment income using fortnightly rates
-    and proper taper calculations that match the main calculation logic.
+    FIXED: Income points for FTB Part A with proper precision handling
     """
     r = RATES["ftb_a"]
 
-    # ── 1. Work out the family's fortnightly maximum & base rates ────────────
-    total_max_pf  = 0.0
+    # Calculate family rates using consistent logic
+    total_max_pf = 0.0
     total_base_pf = 0.0
+    
     for age in family_structure["child_ages"]:
-        max_pf  = r["max_pf"]["0_12"] if age <= 12 else r["max_pf"]["13_15"]  # 16-19 same as 13-15
-        base_pf = r["base_pf"]["0_12"] if age <= 12 else r["base_pf"]["13_plus"]
-        total_max_pf  += max_pf
+        if age <= 12:
+            max_pf = r["max_pf"]["0_12"]   # 222.04
+            base_pf = r["base_pf"]["0_12"] # 71.26
+        elif age <= 15:
+            max_pf = r["max_pf"]["13_15"]   # 288.82
+            base_pf = r["base_pf"]["13_plus"] # 71.26
+        else:  # 16-19
+            max_pf = r["max_pf"]["16_19"]   # 288.82
+            base_pf = r["base_pf"]["13_plus"] # 71.26
+        
+        total_max_pf += max_pf
         total_base_pf += base_pf
 
-    # ── 2. Calculate the zero payment income using the same logic as calc_ftb_part_a ──
-    # The payment calculation works in fortnightly amounts and applies taper per fortnight
+    # FIXED: Use precise calculation that matches the main calc_ftb_part_a logic
+    # Stage 1: Income needed to reduce from max rate to base rate
+    max_to_base_diff_pf = total_max_pf - total_base_pf
+    max_to_base_diff_annual = max_to_base_diff_pf * 26
     
-    # Stage 1: Income from lower_ifa to higher_ifa (taper1 = 20%)
-    # How much income in stage 1 to reduce from max to base rate?
-    stage1_range = r["higher_ifa"] - r["lower_ifa"]  # $50,808
-    max_reduction_in_stage1 = (total_max_pf - total_base_pf) * 26  # Convert PF difference to annual
-    income_needed_stage1 = max_reduction_in_stage1 / r["taper1"]  # How much income to cause this reduction
+    # Income needed in 20% taper zone (limited by available range)
+    stage1_income_needed = max_to_base_diff_annual / r["taper1"]  # Divide by 0.20
+    stage1_available_range = r["higher_ifa"] - r["lower_ifa"]    # $50,808
+    stage1_income_used = min(stage1_income_needed, stage1_available_range)
     
-    # We can't use more than the available stage 1 range
-    income_used_stage1 = min(income_needed_stage1, stage1_range)
+    # Calculate payment remaining after stage 1
+    stage1_reduction_annual = stage1_income_used * r["taper1"]
+    max_payment_annual = total_max_pf * 26
+    payment_after_stage1_annual = max_payment_annual - stage1_reduction_annual
+    remaining_payment_pf = max(payment_after_stage1_annual / 26, total_base_pf)
     
-    # How much payment is left after stage 1?
-    reduction_from_stage1 = income_used_stage1 * r["taper1"]
-    payment_after_stage1_annual = (total_max_pf * 26) - reduction_from_stage1
-    payment_after_stage1_pf = payment_after_stage1_annual / 26
-    
-    # If we haven't reached base rate yet, we're at base rate
-    # If we have more reduction to do, we continue with stage 2
-    remaining_payment_pf = max(payment_after_stage1_pf, total_base_pf)
-    
-    # Stage 2: Income above higher_ifa (taper2 = 30%)
-    # We need to reduce the remaining payment to zero
+    # Stage 2: Income needed to reduce remaining payment to zero (30% taper)
     remaining_payment_annual = remaining_payment_pf * 26
-    income_needed_stage2 = remaining_payment_annual / r["taper2"]
+    stage2_income_needed = remaining_payment_annual / r["taper2"]  # Divide by 0.30
     
     # Total income where payment reaches zero
-    zero_payment_income = r["lower_ifa"] + income_used_stage1 + income_needed_stage2
+    zero_payment_income = r["lower_ifa"] + stage1_income_used + stage2_income_needed
 
     return {
         "supplement_cutoff": r["supplement_income_limit"],  # $80,000
         "taper_start":       r["higher_ifa"],               # $115,997
-        "zero_payment":      round(zero_payment_income),    # Should now be $140,014 for 3 kids under 13
+        "zero_payment":      round(zero_payment_income),    # Now should be ~$140,014
     }
 def find_ftb_b_cutoff(family_structure: Dict) -> Dict:
     """
